@@ -324,7 +324,7 @@ func buildBody(results []CardResult, paths []string, images []imageNote, submitt
 		b.WriteString("## 注意\n\n")
 		b.WriteString("- 新規カードを含みます。英語版データ (`src/data/en/*.json`) にはまだ含まれていません。")
 		b.WriteString("`catalog.ts` の ID ベースのフォールバックにより、英語サイトでも日本語データで表示されるため機能的には壊れませんが、")
-		b.WriteString("翻訳チームが `npm run cards:import-en` 用の CSV を追加するまで英語訳は反映されません。\n")
+		b.WriteString("`npm run cards:import-en` 用の CSV が別途用意されるまで英語訳は反映されません。\n")
 	}
 	return b.String()
 }
