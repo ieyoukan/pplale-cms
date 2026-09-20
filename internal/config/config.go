@@ -39,6 +39,14 @@ type Config struct {
 	BootstrapAdminName   string
 	StaticDir            string
 	AllowInsecureCookies bool
+
+	// DevSkipAuth bypasses Discord OAuth entirely and logs every browser in as
+	// DevUserDiscordID/DevUserName. It only ever takes effect alongside
+	// AllowInsecureCookies, so a misconfigured production deploy cannot
+	// accidentally disable authentication.
+	DevSkipAuth      bool
+	DevUserDiscordID string
+	DevUserName      string
 }
 
 // Getenv is the lookup used to read the environment, overridable in tests.
@@ -62,6 +70,8 @@ func Load(getenv Getenv) (Config, error) {
 		StaticDir:           orDefault(getenv("STATIC_DIR"), "web/dist"),
 	}
 
+	c.DevSkipAuth = truthy(getenv("DEV_SKIP_AUTH"))
+
 	var missing []string
 	require := func(name, value string) {
 		if value == "" {
@@ -69,8 +79,10 @@ func Load(getenv Getenv) (Config, error) {
 		}
 	}
 	require("BASE_URL", c.BaseURL)
-	require("DISCORD_CLIENT_ID", c.DiscordClientID)
-	require("DISCORD_CLIENT_SECRET", c.DiscordClientSecret)
+	if !c.DevSkipAuth {
+		require("DISCORD_CLIENT_ID", c.DiscordClientID)
+		require("DISCORD_CLIENT_SECRET", c.DiscordClientSecret)
+	}
 	require("GITHUB_APP_ID", c.GitHubAppID)
 	require("GITHUB_APP_INSTALLATION_ID", getenv("GITHUB_APP_INSTALLATION_ID"))
 	require("SESSION_KEY", getenv("SESSION_KEY"))
@@ -128,6 +140,21 @@ func Load(getenv Getenv) (Config, error) {
 	c.CookieSecure = !c.AllowInsecureCookies
 	if c.CookieSecure && !strings.HasPrefix(c.BaseURL, "https://") {
 		return Config{}, errors.New("config: BASE_URL は https である必要があります (開発時は ALLOW_INSECURE_COOKIES=true)")
+	}
+
+	if c.DevSkipAuth {
+		// A production deploy always sets CookieSecure=true (BASE_URL is https
+		// unless ALLOW_INSECURE_COOKIES was explicitly set), so this refuses to
+		// let DEV_SKIP_AUTH escape local development even if someone sets it by
+		// mistake in a shared environment.
+		if c.CookieSecure {
+			return Config{}, errors.New("config: DEV_SKIP_AUTH は ALLOW_INSECURE_COOKIES=true のローカル開発でのみ使用できます")
+		}
+		c.DevUserDiscordID = orDefault(getenv("DEV_USER_DISCORD_ID"), c.BootstrapAdminID)
+		c.DevUserName = orDefault(getenv("DEV_USER_NAME"), orDefault(c.BootstrapAdminName, "dev user"))
+		if c.DevUserDiscordID == "" {
+			return Config{}, errors.New("config: DEV_SKIP_AUTH を使うには DEV_USER_DISCORD_ID か BOOTSTRAP_ADMIN_DISCORD_ID が必要です")
+		}
 	}
 
 	return c, nil

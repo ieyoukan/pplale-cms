@@ -21,6 +21,16 @@ import (
 const maxUploadBytes = imageconv.MaxSourceBytes + (1 << 20)
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.deps.DevSkipAuth {
+		if _, err := s.deps.Sessions.Issue(r.Context(), w, s.deps.DevUser); err != nil {
+			writeError(w, http.StatusInternalServerError, "セッションを作成できませんでした")
+			return
+		}
+		s.deps.Logger.Warn("dev-skip-auth login", "discord_id", s.deps.DevUser.ID)
+		http.Redirect(w, r, auth.SafeReturnPath(r.URL.Query().Get("return_to")), http.StatusFound)
+		return
+	}
+
 	pkce, err := auth.NewPKCE()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "ログインを開始できませんでした")

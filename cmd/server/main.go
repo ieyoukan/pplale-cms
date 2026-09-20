@@ -102,6 +102,8 @@ func run(logger *slog.Logger) error {
 		WebhookSecret: cfg.GitHubWebhookSecret,
 		Logger:        logger,
 		SubmitLimit:   cfg.SubmitPerHour,
+		DevSkipAuth:   cfg.DevSkipAuth,
+		DevUser:       auth.DiscordUser{ID: cfg.DevUserDiscordID, Username: cfg.DevUserName},
 	}
 	if info, err := os.Stat(cfg.StaticDir); err == nil && info.IsDir() {
 		deps.StaticFS = os.DirFS(cfg.StaticDir)

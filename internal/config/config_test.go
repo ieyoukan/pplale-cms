@@ -118,6 +118,54 @@ func TestLoadAcceptsPrivateKeyFromFile(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsDevSkipAuthWithSecureCookies(t *testing.T) {
+	env := baseEnv()
+	env["DEV_SKIP_AUTH"] = "true"
+	env["BOOTSTRAP_ADMIN_DISCORD_ID"] = "123456789012345678"
+	// CookieSecure defaults to true here (no ALLOW_INSECURE_COOKIES), which
+	// must never coexist with an auth bypass.
+	if _, err := Load(lookup(env)); err == nil {
+		t.Fatal("DEV_SKIP_AUTH was accepted alongside secure cookies")
+	}
+}
+
+func TestLoadDevSkipAuthRequiresInsecureCookiesAndADevUser(t *testing.T) {
+	env := baseEnv()
+	env["DEV_SKIP_AUTH"] = "true"
+	env["ALLOW_INSECURE_COOKIES"] = "true"
+	delete(env, "DISCORD_CLIENT_ID")
+	delete(env, "DISCORD_CLIENT_SECRET")
+
+	// No dev user identity available at all.
+	if _, err := Load(lookup(env)); err == nil {
+		t.Fatal("DEV_SKIP_AUTH was accepted with no DEV_USER_DISCORD_ID or BOOTSTRAP_ADMIN_DISCORD_ID")
+	}
+
+	env["BOOTSTRAP_ADMIN_DISCORD_ID"] = "123456789012345678"
+	env["BOOTSTRAP_ADMIN_NAME"] = "admin"
+	got, err := Load(lookup(env))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// Discord credentials must not be required once login is bypassed.
+	if got.DiscordClientID != "" {
+		t.Errorf("DiscordClientID = %q, want empty", got.DiscordClientID)
+	}
+	if !got.DevSkipAuth || got.DevUserDiscordID != "123456789012345678" || got.DevUserName != "admin" {
+		t.Errorf("dev skip auth config = %+v", got)
+	}
+
+	env["DEV_USER_DISCORD_ID"] = "999999999999999999"
+	env["DEV_USER_NAME"] = "someone else"
+	got, err = Load(lookup(env))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.DevUserDiscordID != "999999999999999999" || got.DevUserName != "someone else" {
+		t.Errorf("DEV_USER_* did not override the bootstrap admin: %+v", got)
+	}
+}
+
 func writeTempKey(t *testing.T) string {
 	t.Helper()
 	path := t.TempDir() + "/key.pem"

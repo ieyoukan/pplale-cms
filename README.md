@@ -116,6 +116,21 @@ Discord でログインできること自体は権限ではない。カードを
 (`/api/users`, 管理画面の「許可リスト」タブ) に登録されている必要がある。
 最初の管理者は `BOOTSTRAP_ADMIN_DISCORD_ID` で起動時に登録される。
 
+### ローカル開発で Discord ログインを省略する
+
+`http://localhost` はDiscordのOAuthリダイレクトURIに登録できない/しづらいことが多い。
+その場合は `.env` に以下を設定すると `/auth/login` が Discord に飛ばず、
+`BOOTSTRAP_ADMIN_DISCORD_ID` として即ログインする。
+
+```bash
+DEV_SKIP_AUTH=true
+```
+
+`ALLOW_INSECURE_COOKIES=true`（`mise.toml` の既定値）のときしか有効にならない。
+`BASE_URL` が `https://` の設定（本番相当）では `config.Load` がエラーで起動を拒否するため、
+設定ミスで本番にログインバイパスが紛れ込むことはない。有効時は起動ログと
+ログインのたびに `WARN` を出す。`DISCORD_CLIENT_ID`/`SECRET` も不要になる。
+
 ## デプロイ
 
 ```bash

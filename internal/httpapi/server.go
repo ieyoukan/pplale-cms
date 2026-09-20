@@ -37,6 +37,14 @@ type Deps struct {
 	StaticFS fs.FS
 	// SubmitLimit caps submissions per user per hour.
 	SubmitLimit int
+
+	// DevSkipAuth bypasses Discord OAuth entirely: GET /auth/login logs the
+	// browser straight in as DevUser instead of redirecting to Discord. The
+	// caller (cmd/server) only ever sets this when config.DevSkipAuth passed
+	// its ALLOW_INSECURE_COOKIES-only check, so this field carries no
+	// independent safety check of its own — treat it as already validated.
+	DevSkipAuth bool
+	DevUser     auth.DiscordUser
 }
 
 // Server wires the routes together.
@@ -53,6 +61,10 @@ func New(deps Deps) *Server {
 	}
 	if deps.SubmitLimit <= 0 {
 		deps.SubmitLimit = 20
+	}
+	if deps.DevSkipAuth {
+		deps.Logger.Warn("DEV_SKIP_AUTH is enabled: Discord login is bypassed, every browser is signed in as the dev user",
+			"discord_id", deps.DevUser.ID)
 	}
 
 	s := &Server{

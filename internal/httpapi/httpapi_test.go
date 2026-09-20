@@ -397,6 +397,63 @@ func TestLoginRedirectsToDiscordWithSignedState(t *testing.T) {
 	}
 }
 
+func TestDevSkipAuthLogsInWithoutDiscord(t *testing.T) {
+	mem := store.NewMemory()
+	if err := mem.UpsertUser(context.Background(), store.User{DiscordID: "1", DisplayName: "dev", Role: store.RoleAdmin}); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	deps := Deps{
+		Store:       mem,
+		Sessions:    &auth.Sessions{Store: mem},
+		StateSigner: mustSigner(t),
+		Logger:      slog.New(slog.DiscardHandler),
+		DevSkipAuth: true,
+		DevUser:     auth.DiscordUser{ID: "1", Username: "dev"},
+	}
+	server := New(deps)
+
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/login?return_to=/cards", nil))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/cards" {
+		t.Errorf("Location = %q, want the return_to path (no Discord redirect)", loc)
+	}
+
+	var token string
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == auth.SessionCookie {
+			token = c.Value
+		}
+	}
+	if token == "" {
+		t.Fatal("no session cookie was issued")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookie, Value: token})
+	meRec := httptest.NewRecorder()
+	server.ServeHTTP(meRec, req)
+	if meRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/me = %d", meRec.Code)
+	}
+	var me api.Me
+	decode(t, meRec, &me)
+	if me.DiscordID != "1" || !me.CanManageUsers {
+		t.Errorf("me = %+v", me)
+	}
+}
+
+func mustSigner(t *testing.T) *auth.StateSigner {
+	t.Helper()
+	signer, err := auth.NewStateSigner([]byte(strings.Repeat("k", 32)))
+	if err != nil {
+		t.Fatalf("NewStateSigner: %v", err)
+	}
+	return signer
+}
+
 func TestCallbackRejectsForgedState(t *testing.T) {
 	h := newHarness(t)
 
