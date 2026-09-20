@@ -1,0 +1,12 @@
+node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+/bin/
+/server
+*.pem
+.env
+.env.local
+# テンプレートは共有する（グローバルの .env.* 除外を打ち消す）
+!.env.local.example
+.DS_Store
+helm/pplale-cms/charts/

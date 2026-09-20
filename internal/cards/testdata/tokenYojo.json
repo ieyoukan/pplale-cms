@@ -1,0 +1,30 @@
+{
+  "tokenYojo": [
+    {
+      "id": "yt_0",
+      "name": "少女うゆち",
+      "type": "yojo",
+      "fruit": "strawberry",
+      "description": "",
+      "imageUrl": "/images/yojo/222イチゴ少女うゆち.webp",
+      "cost": 2,
+      "hp": 2,
+      "attack": 2,
+      "effect": "この幼女が破壊されたとき、「美女うゆち」を手札に加える。この幼女が手札から場に出たとき、このバトル中に手札から場に出したイチゴタイプの「うゆち」の名が入った幼女が既に5枚以上ならば+3/+3して早食いを持つ",
+      "role": ""
+    },
+    {
+      "id": "yt_1",
+      "name": "美女うゆち",
+      "type": "yojo",
+      "fruit": "strawberry",
+      "description": "",
+      "imageUrl": "/images/yojo/333イチゴ美女うゆち.webp",
+      "cost": 3,
+      "hp": 3,
+      "attack": 3,
+      "effect": "この幼女が手札から場に出たとき、このバトル中に手札から場に出したイチゴタイプの「うゆち」の名が入った幼女が既に5枚以上ならば+3/+3して早食いを持つ",
+      "role": ""
+    }
+  ]
+}

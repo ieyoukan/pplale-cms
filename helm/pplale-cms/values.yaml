@@ -1,0 +1,102 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/ieyoukan/pplale-cms
+  tag: ""          # 未指定なら Chart の appVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# CMS の公開URL。Discord の OAuth リダイレクトURI はこの値 + /auth/callback。
+baseURL: https://cms.pplale.example
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# Cloudflare Tunnel から Service を直接参照する構成では ingress は不要。
+# cloudflared の ingress ルールに次を書けば届く:
+#   service: http://<release-name>-pplale-cms.<namespace>.svc.cluster.local:80
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: cms.pplale.example
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+upstream:
+  owner: ieyoukan
+  repo: PPLALE-web
+  baseBranch: main
+
+# 最初の管理者。起動時に許可リストへ admin として登録される（既に存在すれば何もしない）。
+bootstrapAdmin:
+  discordId: ""
+  name: "bootstrap admin"
+
+session:
+  ttl: 12h
+  submitLimitPerHour: 20
+
+# 機密値。本番では existingSecret を使い、values には書かないこと。
+# 平文を使うのはローカル検証時のみ。
+secrets:
+  existingSecret: ""
+  create: false
+  values:
+    DISCORD_CLIENT_ID: ""
+    DISCORD_CLIENT_SECRET: ""
+    SESSION_KEY: ""            # 32文字以上のランダム文字列
+    GITHUB_APP_ID: ""
+    GITHUB_APP_INSTALLATION_ID: ""
+    GITHUB_APP_PRIVATE_KEY: ""  # GitHub App の PEM 秘密鍵
+    GITHUB_WEBHOOK_SECRET: ""
+    DATABASE_URL: ""            # postgresql.enabled=false のとき必須
+
+postgresql:
+  enabled: true
+  auth:
+    username: pplale
+    password: change-me
+    database: pplale_cms
+  primary:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+extraEnv: []

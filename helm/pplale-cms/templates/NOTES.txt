@@ -1,0 +1,21 @@
+pplale-cms をデプロイしました。
+
+1. Discord Developer Portal のリダイレクトURIに次を登録してください:
+     {{ .Values.baseURL }}/auth/callback
+
+2. GitHub App の Webhook URL に次を登録してください (イベント: Pull requests):
+     {{ .Values.baseURL }}/webhooks/github
+
+3. Cloudflare Tunnel から公開する場合、cloudflared の ingress ルールに:
+     - hostname: {{ trimPrefix "https://" .Values.baseURL }}
+       service: http://{{ include "pplale-cms.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+{{- if not .Values.bootstrapAdmin.discordId }}
+
+注意: bootstrapAdmin.discordId が未設定のため、許可リストが空のままです。
+      誰もカードを提出できません。最初の管理者を設定して再デプロイしてください。
+{{- end }}
+{{- if and .Values.secrets.create (not .Values.secrets.existingSecret) }}
+
+注意: 機密値を values から生成しています。本番では secrets.existingSecret を使ってください。
+{{- end }}

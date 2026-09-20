@@ -1,0 +1,10 @@
+packages:
+  - path: github.com/ieyoukan/pplale-cms/internal/api
+    output_path: web/src/types.generated.ts
+    frontmatter: |
+      /**
+       * このファイルは `mise run gen-types` が internal/api から生成します。
+       * 手で編集しないこと。API の形を変えるときは Go 側の struct を変更してください。
+       */
+    type_mappings:
+      time.Time: "string"

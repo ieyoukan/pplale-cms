@@ -1,0 +1,91 @@
+[tools]
+go = "1.26.2"
+node = "22.23.2"
+helm = "latest"
+"go:github.com/gzuidhof/tygo" = "latest"
+
+[env]
+_.file = { path = ".env.local", redact = true }
+_.path = ["./web/node_modules/.bin"]
+# 開発用の既定値。秘密情報は .env.local に置く（.gitignore 済み / .env.local.example を参照）
+ADDR = ":8080"
+BASE_URL = "http://localhost:8080"
+ALLOW_INSECURE_COOKIES = "true"
+STATIC_DIR = "web/dist"
+
+[tasks.install]
+description = "Install Go modules and frontend dependencies"
+run = ["go mod download", "npm ci --prefix web"]
+
+[tasks.dev]
+description = "Run the API server (frontend is served from web/dist if built)"
+run = "go run ./cmd/server"
+
+[tasks.dev-web]
+description = "Start the Vite dev server (proxies /api and /auth to :8080)"
+dir = "web"
+run = "npm run dev"
+
+[tasks.check]
+description = "Run formatting, vetting, generated-type drift and every test suite"
+depends = ["fmt-check", "vet", "gen-check", "test", "test-web", "helm-lint"]
+
+[tasks.gen-types]
+description = "Generate web/src/types.generated.ts from internal/api"
+run = "tygo generate"
+
+[tasks.gen-check]
+description = "Fail if the generated TypeScript types are out of date"
+depends = ["gen-types"]
+# git 管理下にないと差分が出ず「通ったように見える」ので、追跡されていること自体も確認する。
+run = 'git ls-files --error-unmatch web/src/types.generated.ts >/dev/null || { echo "web/src/types.generated.ts が git 管理下にありません。生成物も commit してください"; exit 1; }; git diff --exit-code -- web/src/types.generated.ts || { echo "web/src/types.generated.ts が古いです。mise run gen-types の結果を commit してください"; exit 1; }'
+
+[tasks.contract-check]
+description = "PPLALE-web の現物と突き合わせて契約のズレを検出する（PPLALE_WEB_PATH で場所を指定）"
+env = { CONTRACT_STRICT = "1" }
+run = "go test ./internal/contract/ -count=1 -v"
+
+[tasks.sync-testdata]
+description = "internal/cards/testdata を PPLALE-web の現物で更新する"
+run = "cp ${PPLALE_WEB_PATH:-../PPLALE-web}/src/data/{yojo,sweet,playable,tokenYojo}.json internal/cards/testdata/"
+
+[tasks.fmt]
+description = "Format Go sources"
+run = "gofmt -w cmd internal"
+
+[tasks.fmt-check]
+description = "Fail if Go sources are not formatted"
+run = 'test -z "$(gofmt -l cmd internal)" || { gofmt -l cmd internal; exit 1; }'
+
+[tasks.vet]
+run = "go vet ./..."
+
+[tasks.test]
+description = "Run the Go test suite"
+run = "go test ./..."
+
+[tasks.test-web]
+description = "Run the frontend test suite"
+dir = "web"
+run = "npm test"
+
+[tasks.build]
+description = "Build the frontend and the server binary"
+depends = ["build-web"]
+run = "go build -o bin/server ./cmd/server"
+
+[tasks.build-web]
+dir = "web"
+run = "npm run build"
+
+[tasks.docker]
+description = "Build the container image"
+run = "docker build -t pplale-cms:dev ."
+
+[tasks.helm-lint]
+description = "Lint the Helm chart"
+run = "helm lint helm/pplale-cms"
+
+[tasks.helm-template]
+description = "Render the Helm chart for review"
+run = "helm template pplale-cms helm/pplale-cms --set secrets.existingSecret=pplale-cms-secrets"

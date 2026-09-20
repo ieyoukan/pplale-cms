@@ -1,0 +1,12 @@
+apiVersion: v2
+name: pplale-cms
+description: PPLALE カードCMS — Discord ログイン必須、PPLALE-web へ PR を作成する管理画面
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+dependencies:
+  - name: postgresql
+    version: "16.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled

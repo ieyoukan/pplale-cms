@@ -70,14 +70,19 @@ interface CardInfo {
   description: string;  // 空文字許容
   imageUrl: string;     // 必須。§4 参照
   role?: CardRole;
-  sweetType?: SweetType;  //お菓子では必須
+  sweetType?: SweetType;  // お菓子カードではフィールド自体を必須とする（値は "" 可）
   effect?: string;
   version?: CardVersion;
 }
 ```
 
 - `role` は yojo カードのみで使う想定。`sweetType` は sweet カードのみ。
-- 未使用のオプションフィールドは省略してよい（空文字を明示で入れない）。
+- オプションフィールドは「そのファイルの既存カードが持っているものは揃える」のが実態。
+  実データでは yojo/tokenYojo が `"role": ""`、sweet が `"sweetType"`（`""` のカードが9枚実在する）、
+  playable が `"version"` を必ず持つ。省略すると diff が不揃いになるため、新規カードでも同じ形にする。
+- キー順も既存ファイルに合わせる:
+  `id, name, type, version?, fruit, description, imageUrl, cost, hp, attack, effect?, role?, sweetType?`
+  （2スペースインデント・末尾改行あり。pplale-cms 側は実データとのバイト一致をテストで保証している）
 
 ## 3. ID 採番規則
 
