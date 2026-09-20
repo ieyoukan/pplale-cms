@@ -8,7 +8,7 @@ image:
 imagePullSecrets: []
 
 # CMS の公開URL。Discord の OAuth リダイレクトURI はこの値 + /auth/callback。
-baseURL: https://cms.pplale.example
+baseURL: https://pplale-cms.youkan.uk
 
 service:
   type: ClusterIP
@@ -23,7 +23,7 @@ ingress:
   className: ""
   annotations: {}
   hosts:
-    - host: cms.pplale.example
+    - host: pplale-cms.youkan.uk
       paths:
         - path: /
           pathType: Prefix

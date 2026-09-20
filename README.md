@@ -121,7 +121,7 @@ Discord でログインできること自体は権限ではない。カードを
 ```bash
 helm dependency update helm/pplale-cms
 helm upgrade --install pplale-cms helm/pplale-cms \
-  --set baseURL=https://cms.example \
+  --set baseURL=https://pplale-cms.youkan.uk \
   --set bootstrapAdmin.discordId=123456789012345678 \
   --set secrets.existingSecret=pplale-cms-secrets
 ```
