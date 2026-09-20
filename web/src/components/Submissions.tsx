@@ -1,9 +1,9 @@
 import type { Submission } from '../types';
 
 const statusLabels: Record<Submission['status'], string> = {
-  pr_open: 'レビュー待ち',
-  merged: 'マージ済み',
-  closed: 'クローズ',
+  pr_open: '確認中',
+  merged: '反映済み',
+  closed: '却下',
 };
 
 export function Submissions({ submissions }: { submissions: Submission[] }) {
@@ -17,7 +17,7 @@ export function Submissions({ submissions }: { submissions: Submission[] }) {
           <th>カード</th>
           <th>提出者</th>
           <th>状態</th>
-          <th>PR</th>
+          <th>詳細</th>
         </tr>
       </thead>
       <tbody>
@@ -37,7 +37,7 @@ export function Submissions({ submissions }: { submissions: Submission[] }) {
             </td>
             <td>
               <a href={s.prUrl} target="_blank" rel="noreferrer">
-                #{s.prNumber}
+                見る
               </a>
             </td>
           </tr>

@@ -27,7 +27,7 @@ function renderForm(kind: Parameters<typeof emptyValues>[0] = 'yojo', onQueued =
       metadata={metadata}
       kind={kind}
       nextId="y_42"
-      values={{ ...values, name: 'テストカード', imageSlug: 'test_card' }}
+      values={{ ...values, name: 'テストカード' }}
       onChange={vi.fn()}
       onQueued={onQueued}
     />,
@@ -72,7 +72,7 @@ describe('CardForm', () => {
     expect(init.headers.get('X-CSRF-Token')).toBe('token-value');
 
     const payload = JSON.parse((init.body as FormData).get('payload') as string);
-    expect(payload).toMatchObject({ kind: 'yojo', name: 'テストカード', imageSlug: 'test_card' });
+    expect(payload).toMatchObject({ kind: 'yojo', name: 'テストカード' });
 
     await waitFor(() => expect(onQueued).toHaveBeenCalledWith(expect.objectContaining({ name: 'テストカード' })));
   });
@@ -118,7 +118,6 @@ describe('fromCard', () => {
       effect: '挑発',
       role: '',
       version: 'normal',
-      imageSlug: '',
     });
   });
 });

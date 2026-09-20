@@ -134,18 +134,17 @@ export function App() {
 
       {banner && (
         <p className="success">
-          PR を作成しました:{' '}
-          <a href={banner.prUrl} target="_blank" rel="noreferrer">
-            #{banner.prNumber}
-          </a>
-          {banner.submission && (
-            <>
-              {' '}
-              ({banner.submission.cards.map((c) => c.cardName).join(' / ')})
-            </>
+          実装担当者に送信しました
+          {banner.submission && banner.submission.cards.length > 0 && (
+            <>：{banner.submission.cards.map((c) => c.cardName).join(' / ')}</>
           )}
           <br />
-          <small>{banner.files.join(' / ')}</small>
+          <small>
+            確認が完了するとゲームに反映されます。
+            <a href={banner.prUrl} target="_blank" rel="noreferrer">
+              変更内容を見る
+            </a>
+          </small>
         </p>
       )}
 

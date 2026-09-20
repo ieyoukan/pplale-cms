@@ -24,7 +24,6 @@ function draft(overrides: Partial<Draft>): Draft {
     cost: 1,
     hp: 1,
     attack: 1,
-    imageSlug: 'kagari',
     imageDisplayUrl: '/api/drafts/1/image',
     hasNewImage: true,
     createdAt: '2026-09-20T00:00:00Z',
@@ -36,7 +35,7 @@ describe('DraftQueue', () => {
   it('shows a hint instead of a submit button when empty', () => {
     render(<DraftQueue drafts={[]} onChanged={vi.fn()} onSubmitted={vi.fn()} />);
     expect(screen.getByText(/下書きはまだありません/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /まとめて PR を作成する/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /まとめて送信する/ })).toBeNull();
   });
 
   it('submits every queued draft in one request and reports the result', async () => {
@@ -56,7 +55,7 @@ describe('DraftQueue', () => {
     const drafts = [draft({ id: 1, name: 'かがり' }), draft({ id: 2, name: 'とここ' })];
     render(<DraftQueue drafts={drafts} onChanged={vi.fn()} onSubmitted={onSubmitted} />);
 
-    await userEvent.click(screen.getByRole('button', { name: /まとめて PR を作成する（2件）/ }));
+    await userEvent.click(screen.getByRole('button', { name: /まとめて送信する（2件）/ }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const [path, init] = fetchMock.mock.calls[0];
@@ -92,7 +91,7 @@ describe('DraftQueue', () => {
     const onSubmitted = vi.fn();
     render(<DraftQueue drafts={[draft({})]} onChanged={vi.fn()} onSubmitted={onSubmitted} />);
 
-    await userEvent.click(screen.getByRole('button', { name: /まとめて PR を作成する/ }));
+    await userEvent.click(screen.getByRole('button', { name: /まとめて送信する/ }));
 
     await waitFor(() => expect(screen.getByText('PR の作成に失敗しました')).toBeTruthy());
     expect(onSubmitted).not.toHaveBeenCalled();

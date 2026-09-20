@@ -266,16 +266,70 @@ textarea {
   gap: 12px;
 }
 
-fieldset {
+/* 画像優先: カードフォームの先頭に置く大きめのプレビュー。
+   ホバーすると「変更できる」ことが分かるようオーバーレイを出す。 */
+.image-picker {
+  position: relative;
+  display: block;
+  width: 160px;
+  aspect-ratio: 3 / 4;
+  margin: 12px 0;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  margin: 16px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--bg-soft);
 }
 
-.preview {
-  max-width: 180px;
-  margin-top: 12px;
-  border-radius: 8px;
+.image-picker-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.image-picker-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  color: transparent;
+}
+
+.image-picker-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 8px;
+}
+
+.image-picker-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 8px;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.image-picker:hover .image-picker-overlay,
+.image-picker:focus-within .image-picker-overlay {
+  opacity: 1;
 }
 
 button[type='submit'],

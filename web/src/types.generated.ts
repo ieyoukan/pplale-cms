@@ -137,7 +137,8 @@ export interface Metadata {
 }
 /**
  * SubmitPayload is the JSON part of the multipart submission. The image is
- * sent alongside it as the `image` file field.
+ * sent alongside it as the `image` file field; its eventual file name is
+ * generated server side, so callers never need to think about paths.
  */
 export interface SubmitPayload {
   kind: string;
@@ -152,7 +153,6 @@ export interface SubmitPayload {
   role?: string;
   sweetType?: string;
   version?: string;
-  imageSlug: string;
 }
 /**
  * SubmitResult reports the pull request a batch submission opened.
@@ -184,7 +184,6 @@ export interface Draft {
   role?: string;
   sweetType?: string;
   version?: string;
-  imageSlug: string;
   /**
    * ImageDisplayURL always resolves to something showable: the newly
    * converted draft image when one was uploaded, otherwise the current

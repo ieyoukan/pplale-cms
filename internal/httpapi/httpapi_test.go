@@ -182,7 +182,7 @@ func TestLoggedInButNotOnAllowListCannotQueueADraft(t *testing.T) {
 	}
 
 	_, draftRec := h.createDraft(t, authenticate, map[string]any{
-		"kind": "yojo", "name": "テスト", "fruit": "melon", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "test",
+		"kind": "yojo", "name": "テスト", "fruit": "melon", "cost": 1, "hp": 1, "attack": 1,
 	}, testPNG())
 	if draftRec.Code != http.StatusForbidden {
 		t.Errorf("POST /api/drafts = %d, want 403", draftRec.Code)
@@ -224,7 +224,7 @@ func TestCreateDraftConvertsImageAndServesIt(t *testing.T) {
 
 	draft, rec := h.createDraft(t, authenticate, map[string]any{
 		"kind": "yojo", "name": "あたらしい子", "fruit": "melon",
-		"cost": 2, "hp": 3, "attack": 1, "effect": "効果テキスト", "imageSlug": "atarashii",
+		"cost": 2, "hp": 3, "attack": 1, "effect": "効果テキスト",
 	}, testPNG())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST /api/drafts = %d: %s", rec.Code, rec.Body)
@@ -284,7 +284,7 @@ func TestCreateDraftReportsFieldValidationErrors(t *testing.T) {
 	authenticate := h.login(t, "100000000000000003", "creator", store.RoleCreator)
 
 	_, rec := h.createDraft(t, authenticate, map[string]any{
-		"kind": "yojo", "name": "", "fruit": "banana", "cost": -1, "hp": 1, "attack": 1, "imageSlug": "ok",
+		"kind": "yojo", "name": "", "fruit": "banana", "cost": -1, "hp": 1, "attack": 1,
 	}, testPNG())
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422: %s", rec.Code, rec.Body)
@@ -303,7 +303,7 @@ func TestCreateDraftRequiresCSRFToken(t *testing.T) {
 	authenticate := h.login(t, "100000000000000004", "creator", store.RoleCreator)
 
 	body, contentType := draftBody(t, map[string]any{
-		"kind": "yojo", "name": "x", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "x",
+		"kind": "yojo", "name": "x", "fruit": "all", "cost": 1, "hp": 1, "attack": 1,
 	}, testPNG())
 	req := httptest.NewRequest(http.MethodPost, "/api/drafts", body)
 	req.Header.Set("Content-Type", contentType)
@@ -322,7 +322,7 @@ func TestDeleteDraftIsOwnerOnly(t *testing.T) {
 	admin := h.login(t, "100000000000000024", "admin", store.RoleAdmin)
 
 	draft, rec := h.createDraft(t, owner, map[string]any{
-		"kind": "yojo", "name": "非公開下書き", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "secret",
+		"kind": "yojo", "name": "非公開下書き", "fruit": "all", "cost": 1, "hp": 1, "attack": 1,
 	}, testPNG())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST /api/drafts = %d", rec.Code)
@@ -348,14 +348,14 @@ func TestSubmitDraftsOpensOneBatchedPullRequestAndClearsTheQueue(t *testing.T) {
 	authenticate := h.login(t, "100000000000000005", "creator", store.RoleCreator)
 
 	first, rec := h.createDraft(t, authenticate, map[string]any{
-		"kind": "yojo", "name": "一人目", "fruit": "melon", "cost": 2, "hp": 3, "attack": 1, "imageSlug": "hitorime",
+		"kind": "yojo", "name": "一人目", "fruit": "melon", "cost": 2, "hp": 3, "attack": 1,
 	}, testPNG())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create first draft = %d: %s", rec.Code, rec.Body)
 	}
 	second, rec := h.createDraft(t, authenticate, map[string]any{
 		"kind": "sweet", "name": "二人目", "fruit": "all", "cost": 1, "hp": 0, "attack": 0,
-		"sweetType": "cake", "imageSlug": "futarime",
+		"sweetType": "cake",
 	}, testPNG())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create second draft = %d: %s", rec.Code, rec.Body)
@@ -411,13 +411,13 @@ func TestSubmitDraftsWithExplicitIDsLeavesOthersQueued(t *testing.T) {
 	authenticate := h.login(t, "100000000000000025", "creator", store.RoleCreator)
 
 	keep, rec := h.createDraft(t, authenticate, map[string]any{
-		"kind": "yojo", "name": "残す方", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "nokosu",
+		"kind": "yojo", "name": "残す方", "fruit": "all", "cost": 1, "hp": 1, "attack": 1,
 	}, testPNG())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create draft = %d", rec.Code)
 	}
 	send, rec := h.createDraft(t, authenticate, map[string]any{
-		"kind": "yojo", "name": "送る方", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "okuru",
+		"kind": "yojo", "name": "送る方", "fruit": "all", "cost": 1, "hp": 1, "attack": 1,
 	}, testPNG())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create draft = %d", rec.Code)
@@ -468,7 +468,7 @@ func TestSubmitDraftsRateLimitPerUser(t *testing.T) {
 	authenticate := h.login(t, "100000000000000006", "creator", store.RoleCreator)
 
 	if _, rec := h.createDraft(t, authenticate, map[string]any{
-		"kind": "yojo", "name": "連投", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "spam",
+		"kind": "yojo", "name": "連投", "fruit": "all", "cost": 1, "hp": 1, "attack": 1,
 	}, testPNG()); rec.Code != http.StatusCreated {
 		t.Fatalf("create draft = %d", rec.Code)
 	}

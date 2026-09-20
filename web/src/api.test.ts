@@ -53,7 +53,6 @@ describe('toPayload', () => {
       cost: 2,
       hp: 3,
       attack: 1,
-      imageSlug: 'kagari',
     });
     expect(payload).toMatchObject({
       kind: 'yojo',
@@ -63,7 +62,6 @@ describe('toPayload', () => {
       cost: 2,
       hp: 3,
       attack: 1,
-      imageSlug: 'kagari',
     });
   });
 });

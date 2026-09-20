@@ -126,7 +126,8 @@ type Metadata struct {
 }
 
 // SubmitPayload is the JSON part of the multipart submission. The image is
-// sent alongside it as the `image` file field.
+// sent alongside it as the `image` file field; its eventual file name is
+// generated server side, so callers never need to think about paths.
 type SubmitPayload struct {
 	Kind        string  `json:"kind"`
 	ID          string  `json:"id"`
@@ -140,7 +141,6 @@ type SubmitPayload struct {
 	Role        *string `json:"role,omitempty"`
 	SweetType   *string `json:"sweetType,omitempty"`
 	Version     *string `json:"version,omitempty"`
-	ImageSlug   string  `json:"imageSlug"`
 }
 
 // SubmitResult reports the pull request a batch submission opened.
@@ -170,7 +170,6 @@ type Draft struct {
 	Role        *string `json:"role,omitempty"`
 	SweetType   *string `json:"sweetType,omitempty"`
 	Version     *string `json:"version,omitempty"`
-	ImageSlug   string  `json:"imageSlug"`
 	// ImageDisplayURL always resolves to something showable: the newly
 	// converted draft image when one was uploaded, otherwise the current
 	// upstream image for an edit-in-place draft.

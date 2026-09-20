@@ -45,7 +45,6 @@ export function emptyValues(kind: Kind): CardFormValues {
     role: '',
     sweetType: '',
     version: 'normal',
-    imageSlug: '',
   };
 }
 
@@ -63,7 +62,6 @@ export function fromCard(kind: Kind, card: Card): CardFormValues {
     role: card.role ?? '',
     sweetType: card.sweetType ?? '',
     version: card.version ?? 'normal',
-    imageSlug: '',
   };
 }
 
@@ -86,6 +84,7 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
 
   const isEdit = values.id !== '';
   const preview = useMemo(() => (image ? URL.createObjectURL(image) : ''), [image]);
+  const displayImage = preview || (isEdit ? currentImageUrl : '');
 
   const set = <K extends keyof CardFormValues>(key: K, value: CardFormValues[K]) =>
     onChange({ ...values, [key]: value });
@@ -114,6 +113,29 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
   return (
     <form className="card-form" onSubmit={handleSubmit}>
       <h2>{isEdit ? `カードを編集 (${values.id})` : `新規カード (${nextId} として登録されます)`}</h2>
+
+      <label className="image-picker">
+        <input
+          type="file"
+          className="image-picker-input"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={(e) => setImage(e.target.files?.[0] ?? null)}
+        />
+        {displayImage ? (
+          <img className="image-picker-preview" src={displayImage} alt="" />
+        ) : (
+          <div className="image-picker-placeholder">画像を追加</div>
+        )}
+        <div className="image-picker-overlay">{displayImage ? '画像を変更' : '画像を追加'}</div>
+      </label>
+      <FieldError message={fieldErrors.imageUrl} />
+      <p className="hint">
+        {isEdit
+          ? '画像にカーソルを合わせると変更できます。選ばない場合は今の画像のままです。'
+          : '画像にカーソルを合わせて追加してください。'}
+        {' '}
+        幅800pxのWebPに自動で変換されます。
+      </p>
 
       <label>
         カード名
@@ -201,43 +223,14 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
         <textarea rows={2} value={values.description} onChange={(e) => set('description', e.target.value)} />
       </label>
 
-      <fieldset>
-        <legend>画像</legend>
-        <p className="hint">
-          アップロードした画像は幅800pxのWebP (quality 80) と、OGP用の幅240px PNG の2枚に変換され、同じPRに含まれます。
-        </p>
-        <input
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          onChange={(e) => setImage(e.target.files?.[0] ?? null)}
-        />
-        <label>
-          画像ファイル名 (半角英数字・ハイフン・アンダースコア)
-          <input
-            value={values.imageSlug}
-            onChange={(e) => set('imageSlug', e.target.value)}
-            placeholder="ichigo_kagari"
-            required={!isEdit}
-          />
-          <FieldError message={fieldErrors.imageUrl} />
-        </label>
-        {preview && <img className="preview" src={preview} alt="アップロード画像のプレビュー" />}
-        {!preview && isEdit && currentImageUrl && (
-          <>
-            <img className="preview" src={currentImageUrl} alt="現在の画像" />
-            <p className="hint">画像を選ばない場合は現在の画像がそのまま使われます。</p>
-          </>
-        )}
-      </fieldset>
-
       {error && <p className="error">{error}</p>}
 
       <button type="submit" disabled={busy}>
         {busy ? '追加中…' : isEdit ? '下書きに追加(更新)' : '下書きに追加'}
       </button>
       <p className="hint">
-        下書きに追加されるだけで、まだ PPLALE-web には送られません。下書き一覧から「まとめて PR を作成」を押すと、
-        たまっているカードをまとめて 1 つの Pull Request にして送信します。
+        下書きに追加されるだけで、まだ PPLALE-web には送られません。下書き一覧から「まとめて送信」を押すと、
+        たまっているカードをまとめて実装担当者に送ります。
       </p>
     </form>
   );

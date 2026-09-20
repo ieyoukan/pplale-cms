@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -232,14 +234,15 @@ func (s *Server) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 	isEdit := card.ID != ""
 
 	var converted *imageconv.Result
+	var imageSlug string
 	switch {
 	case len(imageBytes) > 0:
-		slug, err := publish.SanitizeSlug(payload.ImageSlug)
+		slug, err := generateImageSlug()
 		if err != nil {
-			writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{
-				Error: "入力内容を確認してください", Fields: map[string]string{"imageUrl": err.Error()}})
+			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		imageSlug = slug
 		result, err := imageconv.Convert(imageBytes)
 		if err != nil {
 			writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{
@@ -288,7 +291,7 @@ func (s *Server) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 		Role:        stringPtr(card.Role),
 		SweetType:   stringPtr(card.SweetType),
 		Version:     stringPtr(card.Version),
-		ImageSlug:   strings.TrimSpace(payload.ImageSlug),
+		ImageSlug:   imageSlug,
 	}
 	if converted != nil {
 		draft.WebP = converted.WebP
@@ -305,6 +308,18 @@ func (s *Server) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 
 	s.deps.Logger.Info("draft created", "discord_id", session.DiscordID, "draft_id", saved.ID, "kind", ds.Kind)
 	writeJSON(w, http.StatusCreated, s.draftToAPI(r.Context(), saved))
+}
+
+// generateImageSlug picks the file name a new image is stored under. Callers
+// never choose this themselves: the directory is already implied by the
+// dataset, and a random name sidesteps collisions without asking anyone to
+// think about paths.
+func generateImageSlug() (string, error) {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("画像ファイル名を生成できませんでした: %w", err)
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 // placeholderIDForValidation supplies a syntactically valid ID for the fields
@@ -341,7 +356,7 @@ func (s *Server) draftToAPI(ctx context.Context, d store.Draft) api.Draft {
 		Name: d.Name, Fruit: d.Fruit, Description: d.Description,
 		Cost: d.Cost, HP: d.HP, Attack: d.Attack,
 		Effect: d.Effect, Role: d.Role, SweetType: d.SweetType, Version: d.Version,
-		ImageSlug: d.ImageSlug, HasNewImage: len(d.WebP) > 0, CreatedAt: d.CreatedAt,
+		HasNewImage: len(d.WebP) > 0, CreatedAt: d.CreatedAt,
 	}
 	if out.HasNewImage {
 		out.ImageDisplayURL = fmt.Sprintf("/api/drafts/%d/image", d.ID)

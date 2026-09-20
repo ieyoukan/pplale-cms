@@ -72,9 +72,9 @@ export function DraftQueue({ drafts, onChanged, onSubmitted }: Props) {
       {error && <p className="error">{error}</p>}
 
       <button type="button" className="submit-all" disabled={busy} onClick={submitAll}>
-        {busy ? 'PR を作成中…' : `まとめて PR を作成する（${drafts.length}件）`}
+        {busy ? '送信中…' : `まとめて送信する（${drafts.length}件）`}
       </button>
-      <p className="hint">{drafts.length}件のカードが1つの Pull Request としてまとめて PPLALE-web に送られます。</p>
+      <p className="hint">{drafts.length}件のカードがまとめて実装担当者に送られ、確認され次第ゲームに反映されます。</p>
     </div>
   );
 }

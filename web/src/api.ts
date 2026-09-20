@@ -102,7 +102,6 @@ export function toPayload(values: CardFormValues): SubmitPayload {
     hp: values.hp,
     attack: values.attack,
     effect: values.effect,
-    imageSlug: values.imageSlug,
   };
   if (values.kind === 'yojo' || values.kind === 'tokenYojo') {
     payload.role = values.role;

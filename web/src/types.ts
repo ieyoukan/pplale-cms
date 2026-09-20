@@ -43,5 +43,4 @@ export interface CardFormValues {
   role: string;
   sweetType: string;
   version: string;
-  imageSlug: string;
 }
