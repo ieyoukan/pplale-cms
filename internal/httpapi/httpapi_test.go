@@ -15,6 +15,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -131,23 +132,40 @@ func (h *harness) do(r *http.Request) *httptest.ResponseRecorder {
 	return rec
 }
 
+// createDraft drives POST /api/drafts and returns the decoded draft.
+func (h *harness) createDraft(t *testing.T, authenticate func(*http.Request), payload map[string]any, img []byte) (api.Draft, *httptest.ResponseRecorder) {
+	t.Helper()
+	body, contentType := draftBody(t, payload, img)
+	req := httptest.NewRequest(http.MethodPost, "/api/drafts", body)
+	req.Header.Set("Content-Type", contentType)
+	authenticate(req)
+	rec := h.do(req)
+	var d api.Draft
+	if rec.Code == http.StatusCreated {
+		decode(t, rec, &d)
+	}
+	return d, rec
+}
+
 func TestUnauthenticatedRequestsAreRejected(t *testing.T) {
 	h := newHarness(t)
-	for _, path := range []string{"/api/me", "/api/cards?kind=yojo", "/api/submissions", "/api/users"} {
+	for _, path := range []string{"/api/me", "/api/cards?kind=yojo", "/api/submissions", "/api/users", "/api/drafts"} {
 		rec := h.do(httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("GET %s = %d, want 401", path, rec.Code)
 		}
 	}
-	rec := h.do(httptest.NewRequest(http.MethodPost, "/api/submissions", nil))
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("POST /api/submissions = %d, want 401", rec.Code)
+	for _, path := range []string{"/api/drafts", "/api/drafts/submit"} {
+		rec := h.do(httptest.NewRequest(http.MethodPost, path, nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("POST %s = %d, want 401", path, rec.Code)
+		}
 	}
 }
 
-// Logging in with Discord proves identity only. Submitting requires an entry
-// on the allow list.
-func TestLoggedInButNotOnAllowListCannotSubmit(t *testing.T) {
+// Logging in with Discord proves identity only. Queuing a draft requires an
+// entry on the allow list.
+func TestLoggedInButNotOnAllowListCannotQueueADraft(t *testing.T) {
 	h := newHarness(t)
 	authenticate := h.login(t, "100000000000000001", "stranger", "")
 
@@ -163,18 +181,11 @@ func TestLoggedInButNotOnAllowListCannotSubmit(t *testing.T) {
 		t.Errorf("me = %+v, want no privileges", me)
 	}
 
-	body, contentType := submissionBody(t, map[string]any{
+	_, draftRec := h.createDraft(t, authenticate, map[string]any{
 		"kind": "yojo", "name": "テスト", "fruit": "melon", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "test",
 	}, testPNG())
-	post := httptest.NewRequest(http.MethodPost, "/api/submissions", body)
-	post.Header.Set("Content-Type", contentType)
-	authenticate(post)
-
-	if rec := h.do(post); rec.Code != http.StatusForbidden {
-		t.Errorf("POST /api/submissions = %d, want 403", rec.Code)
-	}
-	if len(h.repo.created) != 0 {
-		t.Error("a pull request was opened for a user who is not on the allow list")
+	if draftRec.Code != http.StatusForbidden {
+		t.Errorf("POST /api/drafts = %d, want 403", draftRec.Code)
 	}
 }
 
@@ -207,65 +218,74 @@ func TestCardsIncludeAFetchableImageURL(t *testing.T) {
 	}
 }
 
-func TestSubmitOpensPullRequestAndRecordsAudit(t *testing.T) {
+func TestCreateDraftConvertsImageAndServesIt(t *testing.T) {
 	h := newHarness(t)
 	authenticate := h.login(t, "100000000000000002", "creator", store.RoleCreator)
 
-	body, contentType := submissionBody(t, map[string]any{
+	draft, rec := h.createDraft(t, authenticate, map[string]any{
 		"kind": "yojo", "name": "あたらしい子", "fruit": "melon",
 		"cost": 2, "hp": 3, "attack": 1, "effect": "効果テキスト", "imageSlug": "atarashii",
 	}, testPNG())
-	req := httptest.NewRequest(http.MethodPost, "/api/submissions", body)
-	req.Header.Set("Content-Type", contentType)
-	authenticate(req)
-
-	rec := h.do(req)
 	if rec.Code != http.StatusCreated {
-		t.Fatalf("POST /api/submissions = %d: %s", rec.Code, rec.Body)
+		t.Fatalf("POST /api/drafts = %d: %s", rec.Code, rec.Body)
+	}
+	if draft.IsEdit || draft.Kind != "yojo" || draft.Name != "あたらしい子" {
+		t.Errorf("draft = %+v", draft)
+	}
+	if !draft.HasNewImage || draft.ImageDisplayURL != "/api/drafts/1/image" {
+		t.Errorf("draft image = %+v", draft)
 	}
 
-	var resp struct {
-		CardID string   `json:"cardId"`
-		Branch string   `json:"branch"`
-		Files  []string `json:"files"`
-		PRURL  string   `json:"prUrl"`
-	}
-	decode(t, rec, &resp)
-	if resp.CardID != "y_1" || resp.Branch != "cms/yojo-y_1" {
-		t.Errorf("response = %+v", resp)
-	}
-	if len(resp.Files) != 3 {
-		t.Errorf("files = %v, want the dataset, the WebP and the OGP PNG", resp.Files)
+	// The list endpoint must show the same queued draft.
+	listReq := httptest.NewRequest(http.MethodGet, "/api/drafts", nil)
+	authenticate(listReq)
+	listRec := h.do(listReq)
+	var list api.DraftsResponse
+	decode(t, listRec, &list)
+	if len(list.Drafts) != 1 || list.Drafts[0].ID != draft.ID {
+		t.Fatalf("drafts list = %+v", list)
 	}
 
-	if len(h.repo.created) != 1 {
-		t.Fatalf("created %d pull requests, want 1", len(h.repo.created))
+	imgReq := httptest.NewRequest(http.MethodGet, draft.ImageDisplayURL, nil)
+	authenticate(imgReq)
+	imgRec := h.do(imgReq)
+	if imgRec.Code != http.StatusOK || imgRec.Header().Get("Content-Type") != "image/webp" {
+		t.Errorf("GET %s = %d %q", draft.ImageDisplayURL, imgRec.Code, imgRec.Header().Get("Content-Type"))
 	}
-	if !strings.Contains(h.repo.created[0].CommitMessage, "discord:100000000000000002") {
-		t.Errorf("commit message = %q, want the submitter recorded", h.repo.created[0].CommitMessage)
-	}
-
-	audit, err := h.store.ListSubmissions(context.Background(), 10)
-	if err != nil {
-		t.Fatalf("ListSubmissions: %v", err)
-	}
-	if len(audit) != 1 || audit[0].CardID != "y_1" || audit[0].Status != store.StatusOpen {
-		t.Errorf("audit = %+v", audit)
+	if imgRec.Body.Len() == 0 {
+		t.Error("draft image body is empty")
 	}
 }
 
-func TestSubmitReportsFieldValidationErrors(t *testing.T) {
+// An edit draft with no new image must resolve to the card's current
+// upstream image, not a broken/placeholder URL.
+func TestCreateEditDraftWithoutNewImageShowsCurrentImage(t *testing.T) {
+	h := newHarness(t)
+	authenticate := h.login(t, "100000000000000021", "creator", store.RoleCreator)
+
+	draft, rec := h.createDraft(t, authenticate, map[string]any{
+		"kind": "yojo", "id": "y_0", "name": "かがり(改)", "fruit": "strawberry",
+		"cost": 1, "hp": 1, "attack": 1,
+	}, nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/drafts = %d: %s", rec.Code, rec.Body)
+	}
+	if !draft.IsEdit || draft.HasNewImage {
+		t.Errorf("draft = %+v", draft)
+	}
+	want := "https://raw.githubusercontent.com/ieyoukan/PPLALE-web/main/public/images/yojo/kagari.webp"
+	if draft.ImageDisplayURL != want {
+		t.Errorf("ImageDisplayURL = %q, want %q", draft.ImageDisplayURL, want)
+	}
+}
+
+func TestCreateDraftReportsFieldValidationErrors(t *testing.T) {
 	h := newHarness(t)
 	authenticate := h.login(t, "100000000000000003", "creator", store.RoleCreator)
 
-	body, contentType := submissionBody(t, map[string]any{
+	_, rec := h.createDraft(t, authenticate, map[string]any{
 		"kind": "yojo", "name": "", "fruit": "banana", "cost": -1, "hp": 1, "attack": 1, "imageSlug": "ok",
 	}, testPNG())
-	req := httptest.NewRequest(http.MethodPost, "/api/submissions", body)
-	req.Header.Set("Content-Type", contentType)
-	authenticate(req)
-
-	rec := h.do(req)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422: %s", rec.Code, rec.Body)
 	}
@@ -276,19 +296,16 @@ func TestSubmitReportsFieldValidationErrors(t *testing.T) {
 			t.Errorf("no error reported for %q: %+v", field, resp.Fields)
 		}
 	}
-	if len(h.repo.created) != 0 {
-		t.Error("an invalid submission opened a pull request")
-	}
 }
 
-func TestSubmitRequiresCSRFToken(t *testing.T) {
+func TestCreateDraftRequiresCSRFToken(t *testing.T) {
 	h := newHarness(t)
 	authenticate := h.login(t, "100000000000000004", "creator", store.RoleCreator)
 
-	body, contentType := submissionBody(t, map[string]any{
+	body, contentType := draftBody(t, map[string]any{
 		"kind": "yojo", "name": "x", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "x",
 	}, testPNG())
-	req := httptest.NewRequest(http.MethodPost, "/api/submissions", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/drafts", body)
 	req.Header.Set("Content-Type", contentType)
 	authenticate(req)
 	req.Header.Del(auth.CSRFHeader)
@@ -296,67 +313,221 @@ func TestSubmitRequiresCSRFToken(t *testing.T) {
 	if rec := h.do(req); rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403 without a CSRF token", rec.Code)
 	}
-	if len(h.repo.created) != 0 {
-		t.Error("a cross-site request opened a pull request")
+}
+
+func TestDeleteDraftIsOwnerOnly(t *testing.T) {
+	h := newHarness(t)
+	owner := h.login(t, "100000000000000022", "owner", store.RoleCreator)
+	other := h.login(t, "100000000000000023", "other", store.RoleCreator)
+	admin := h.login(t, "100000000000000024", "admin", store.RoleAdmin)
+
+	draft, rec := h.createDraft(t, owner, map[string]any{
+		"kind": "yojo", "name": "非公開下書き", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "secret",
+	}, testPNG())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/drafts = %d", rec.Code)
+	}
+
+	deletePath := "/api/drafts/" + itoa(draft.ID)
+	forbidden := httptest.NewRequest(http.MethodDelete, deletePath, nil)
+	other(forbidden)
+	if rec := h.do(forbidden); rec.Code != http.StatusForbidden {
+		t.Errorf("another user's DELETE = %d, want 403", rec.Code)
+	}
+
+	// An admin may still manage anyone's draft.
+	asAdmin := httptest.NewRequest(http.MethodDelete, deletePath, nil)
+	admin(asAdmin)
+	if rec := h.do(asAdmin); rec.Code != http.StatusOK {
+		t.Errorf("admin DELETE = %d, want 200", rec.Code)
 	}
 }
 
-func TestSubmitRateLimitPerUser(t *testing.T) {
-	h := newHarness(t) // SubmitLimit is 3
+func TestSubmitDraftsOpensOneBatchedPullRequestAndClearsTheQueue(t *testing.T) {
+	h := newHarness(t)
 	authenticate := h.login(t, "100000000000000005", "creator", store.RoleCreator)
 
+	first, rec := h.createDraft(t, authenticate, map[string]any{
+		"kind": "yojo", "name": "一人目", "fruit": "melon", "cost": 2, "hp": 3, "attack": 1, "imageSlug": "hitorime",
+	}, testPNG())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create first draft = %d: %s", rec.Code, rec.Body)
+	}
+	second, rec := h.createDraft(t, authenticate, map[string]any{
+		"kind": "sweet", "name": "二人目", "fruit": "all", "cost": 1, "hp": 0, "attack": 0,
+		"sweetType": "cake", "imageSlug": "futarime",
+	}, testPNG())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create second draft = %d: %s", rec.Code, rec.Body)
+	}
+
+	submitReq := httptest.NewRequest(http.MethodPost, "/api/drafts/submit", nil)
+	authenticate(submitReq)
+	submitRec := h.do(submitReq)
+	if submitRec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/drafts/submit = %d: %s", submitRec.Code, submitRec.Body)
+	}
+
+	var result api.SubmitResult
+	decode(t, submitRec, &result)
+	if result.Submission == nil || len(result.Submission.Cards) != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+
+	if len(h.repo.created) != 1 {
+		t.Fatalf("created %d pull requests, want exactly 1 for the whole batch", len(h.repo.created))
+	}
+	pr := h.repo.created[0]
+	if !strings.Contains(pr.CommitMessage, "discord:100000000000000005") {
+		t.Errorf("commit message = %q, want the submitter recorded", pr.CommitMessage)
+	}
+	if !strings.Contains(pr.Title, "2件") {
+		t.Errorf("title = %q, want it to mention both cards", pr.Title)
+	}
+
+	// The queue must be empty again: both drafts were consumed by the batch.
+	listReq := httptest.NewRequest(http.MethodGet, "/api/drafts", nil)
+	authenticate(listReq)
+	listRec := h.do(listReq)
+	var list api.DraftsResponse
+	decode(t, listRec, &list)
+	if len(list.Drafts) != 0 {
+		t.Errorf("drafts remaining after submit = %+v", list.Drafts)
+	}
+
+	audit, err := h.store.ListSubmissions(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ListSubmissions: %v", err)
+	}
+	if len(audit) != 1 || len(audit[0].Cards) != 2 || audit[0].Status != store.StatusOpen {
+		t.Errorf("audit = %+v", audit)
+	}
+	_ = first
+	_ = second
+}
+
+func TestSubmitDraftsWithExplicitIDsLeavesOthersQueued(t *testing.T) {
+	h := newHarness(t)
+	authenticate := h.login(t, "100000000000000025", "creator", store.RoleCreator)
+
+	keep, rec := h.createDraft(t, authenticate, map[string]any{
+		"kind": "yojo", "name": "残す方", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "nokosu",
+	}, testPNG())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create draft = %d", rec.Code)
+	}
+	send, rec := h.createDraft(t, authenticate, map[string]any{
+		"kind": "yojo", "name": "送る方", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "okuru",
+	}, testPNG())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create draft = %d", rec.Code)
+	}
+
+	reqBody, err := json.Marshal(api.SubmitDraftsRequest{IDs: []int64{send.ID}})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	submitReq := httptest.NewRequest(http.MethodPost, "/api/drafts/submit", bytes.NewReader(reqBody))
+	authenticate(submitReq)
+	submitRec := h.do(submitReq)
+	if submitRec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/drafts/submit = %d: %s", submitRec.Code, submitRec.Body)
+	}
+	var result api.SubmitResult
+	decode(t, submitRec, &result)
+	if len(result.Submission.Cards) != 1 || result.Submission.Cards[0].CardName != "送る方" {
+		t.Fatalf("submitted cards = %+v", result.Submission.Cards)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/drafts", nil)
+	authenticate(listReq)
+	listRec := h.do(listReq)
+	var list api.DraftsResponse
+	decode(t, listRec, &list)
+	if len(list.Drafts) != 1 || list.Drafts[0].ID != keep.ID {
+		t.Errorf("remaining drafts = %+v, want only %d", list.Drafts, keep.ID)
+	}
+}
+
+func TestSubmitDraftsRejectsEmptyQueue(t *testing.T) {
+	h := newHarness(t)
+	authenticate := h.login(t, "100000000000000026", "creator", store.RoleCreator)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/drafts/submit", nil)
+	authenticate(req)
+	if rec := h.do(req); rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for an empty queue", rec.Code)
+	}
+	if len(h.repo.created) != 0 {
+		t.Error("a pull request was opened for an empty queue")
+	}
+}
+
+func TestSubmitDraftsRateLimitPerUser(t *testing.T) {
+	h := newHarness(t) // SubmitLimit is 3
+	authenticate := h.login(t, "100000000000000006", "creator", store.RoleCreator)
+
+	if _, rec := h.createDraft(t, authenticate, map[string]any{
+		"kind": "yojo", "name": "連投", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "spam",
+	}, testPNG()); rec.Code != http.StatusCreated {
+		t.Fatalf("create draft = %d", rec.Code)
+	}
+
 	send := func() int {
-		body, contentType := submissionBody(t, map[string]any{
-			"kind": "yojo", "name": "連投", "fruit": "all", "cost": 1, "hp": 1, "attack": 1, "imageSlug": "spam",
-		}, testPNG())
-		req := httptest.NewRequest(http.MethodPost, "/api/submissions", body)
-		req.Header.Set("Content-Type", contentType)
+		req := httptest.NewRequest(http.MethodPost, "/api/drafts/submit", nil)
 		authenticate(req)
 		return h.do(req).Code
 	}
 
-	for i := 0; i < 3; i++ {
-		if code := send(); code != http.StatusCreated {
-			t.Fatalf("submission %d = %d", i+1, code)
-		}
+	// The queue only has one draft: the first call consumes it (201), the
+	// next two find nothing to submit (400), but all three still count
+	// against the rate limit.
+	if code := send(); code != http.StatusCreated {
+		t.Fatalf("submit 1 = %d", code)
+	}
+	if code := send(); code != http.StatusBadRequest {
+		t.Fatalf("submit 2 = %d", code)
+	}
+	if code := send(); code != http.StatusBadRequest {
+		t.Fatalf("submit 3 = %d", code)
 	}
 	if code := send(); code != http.StatusTooManyRequests {
-		t.Errorf("fourth submission = %d, want 429", code)
+		t.Errorf("submit 4 = %d, want 429", code)
 	}
 }
 
 func TestAllowListAdministrationRequiresAdmin(t *testing.T) {
 	h := newHarness(t)
-	creator := h.login(t, "100000000000000006", "creator", store.RoleCreator)
+	creator := h.login(t, "100000000000000007", "creator", store.RoleCreator)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/users/100000000000000007", strings.NewReader(`{"role":"admin"}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/users/100000000000000008", strings.NewReader(`{"role":"admin"}`))
 	creator(req)
 	if rec := h.do(req); rec.Code != http.StatusForbidden {
 		t.Errorf("creator PUT /api/users = %d, want 403", rec.Code)
 	}
 
-	admin := h.login(t, "100000000000000008", "admin", store.RoleAdmin)
-	req = httptest.NewRequest(http.MethodPut, "/api/users/100000000000000007", strings.NewReader(`{"role":"creator","displayName":"new"}`))
+	admin := h.login(t, "100000000000000009", "admin", store.RoleAdmin)
+	req = httptest.NewRequest(http.MethodPut, "/api/users/100000000000000008", strings.NewReader(`{"role":"creator","displayName":"new"}`))
 	admin(req)
 	if rec := h.do(req); rec.Code != http.StatusOK {
 		t.Fatalf("admin PUT /api/users = %d", rec.Code)
 	}
 
-	added, err := h.store.GetUser(context.Background(), "100000000000000007")
-	if err != nil || added.Role != store.RoleCreator || added.AddedBy != "100000000000000008" {
+	added, err := h.store.GetUser(context.Background(), "100000000000000008")
+	if err != nil || added.Role != store.RoleCreator || added.AddedBy != "100000000000000009" {
 		t.Errorf("stored user = %+v, err = %v", added, err)
 	}
 }
 
 func TestUpsertUserRejectsBadInput(t *testing.T) {
 	h := newHarness(t)
-	admin := h.login(t, "100000000000000009", "admin", store.RoleAdmin)
+	admin := h.login(t, "100000000000000010", "admin", store.RoleAdmin)
 
 	cases := map[string]struct {
 		id   string
 		body string
 	}{
-		"unknown role":    {"100000000000000010", `{"role":"superuser"}`},
+		"unknown role":    {"100000000000000011", `{"role":"superuser"}`},
 		"non numeric id":  {"not-a-snowflake", `{"role":"creator"}`},
 		"too short an id": {"12345", `{"role":"creator"}`},
 	}
@@ -372,8 +543,8 @@ func TestUpsertUserRejectsBadInput(t *testing.T) {
 // Removing someone must also invalidate the browser they already have open.
 func TestDeleteUserRevokesTheirSessions(t *testing.T) {
 	h := newHarness(t)
-	victim := h.login(t, "100000000000000011", "creator", store.RoleCreator)
-	admin := h.login(t, "100000000000000012", "admin", store.RoleAdmin)
+	victim := h.login(t, "100000000000000012", "creator", store.RoleCreator)
+	admin := h.login(t, "100000000000000013", "admin", store.RoleAdmin)
 
 	probe := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	victim(probe)
@@ -381,7 +552,7 @@ func TestDeleteUserRevokesTheirSessions(t *testing.T) {
 		t.Fatalf("victim GET /api/me = %d before removal", rec.Code)
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/users/100000000000000011", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/users/100000000000000012", nil)
 	admin(req)
 	if rec := h.do(req); rec.Code != http.StatusOK {
 		t.Fatalf("admin DELETE = %d", rec.Code)
@@ -396,8 +567,8 @@ func TestDeleteUserRevokesTheirSessions(t *testing.T) {
 
 func TestAdminCannotDeleteThemselves(t *testing.T) {
 	h := newHarness(t)
-	admin := h.login(t, "100000000000000013", "admin", store.RoleAdmin)
-	req := httptest.NewRequest(http.MethodDelete, "/api/users/100000000000000013", nil)
+	admin := h.login(t, "100000000000000014", "admin", store.RoleAdmin)
+	req := httptest.NewRequest(http.MethodDelete, "/api/users/100000000000000014", nil)
 	admin(req)
 	if rec := h.do(req); rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
@@ -505,7 +676,7 @@ func TestCallbackRejectsForgedState(t *testing.T) {
 func TestWebhookSignature(t *testing.T) {
 	h := newHarness(t)
 	if _, err := h.store.CreateSubmission(context.Background(), store.Submission{
-		PRNumber: 101, CardID: "y_1", Status: store.StatusOpen,
+		PRNumber: 101, Cards: []store.SubmissionCard{{Kind: "yojo", CardID: "y_1"}}, Status: store.StatusOpen,
 	}); err != nil {
 		t.Fatalf("CreateSubmission: %v", err)
 	}
@@ -578,7 +749,7 @@ func TestSecurityHeadersAreAlwaysSet(t *testing.T) {
 	}
 }
 
-func submissionBody(t *testing.T, payload map[string]any, image []byte) (io.Reader, string) {
+func draftBody(t *testing.T, payload map[string]any, image []byte) (io.Reader, string) {
 	t.Helper()
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -631,4 +802,8 @@ func decode(t *testing.T, rec *httptest.ResponseRecorder, out any) {
 	if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
 		t.Fatalf("decode response: %v (body: %s)", err, rec.Body)
 	}
+}
+
+func itoa(n int64) string {
+	return strconv.FormatInt(n, 10)
 }

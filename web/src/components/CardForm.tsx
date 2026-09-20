@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ApiError, api } from '../api';
-import type { Card, CardFormValues, Kind, Metadata, SubmitResult } from '../types';
+import type { Card, CardFormValues, Draft, Kind, Metadata } from '../types';
 
 const fruitLabels: Record<string, string> = {
   all: '全種',
@@ -75,10 +75,10 @@ interface Props {
   /** 編集中カードの現在の画像。新規アップロードを選ぶまではこれを表示する。 */
   currentImageUrl?: string;
   onChange: (values: CardFormValues) => void;
-  onSubmitted: (result: SubmitResult) => void;
+  onQueued: (draft: Draft) => void;
 }
 
-export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onChange, onSubmitted }: Props) {
+export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onChange, onQueued }: Props) {
   const [image, setImage] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -96,9 +96,9 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
     setError('');
     setFieldErrors({});
     try {
-      const result = await api.submit({ ...values, kind }, image);
+      const draft = await api.createDraft({ ...values, kind }, image);
       setImage(null);
-      onSubmitted(result);
+      onQueued(draft);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -233,10 +233,11 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
       {error && <p className="error">{error}</p>}
 
       <button type="submit" disabled={busy}>
-        {busy ? 'PR を作成中…' : 'PR を作成する'}
+        {busy ? '追加中…' : isEdit ? '下書きに追加(更新)' : '下書きに追加'}
       </button>
       <p className="hint">
-        送信すると PPLALE-web に Pull Request が作成されます。main への直接反映は行われず、レビュー後にマージされます。
+        下書きに追加されるだけで、まだ PPLALE-web には送られません。下書き一覧から「まとめて PR を作成」を押すと、
+        たまっているカードをまとめて 1 つの Pull Request にして送信します。
       </p>
     </form>
   );

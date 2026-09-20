@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -163,12 +164,33 @@ func (s *Server) handleCards(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.CardsResponse{Kind: string(ds.Kind), NextID: cards.NextID(ds, list), Cards: out})
 }
 
-func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
-	session, _ := sessionFrom(r.Context())
-	if !s.limiter.Allow(session.DiscordID) {
-		writeError(w, http.StatusTooManyRequests, "提出が多すぎます。しばらく待ってから再度お試しください")
-		return
+// buildDraftCard turns a submitted payload into the internal card shape,
+// applying dataset defaults so a draft always has the same optional fields
+// its neighbours in the file would.
+func buildDraftCard(ds cards.Dataset, payload api.SubmitPayload) cards.Card {
+	card := cards.Card{
+		ID:          strings.TrimSpace(payload.ID),
+		Name:        strings.TrimSpace(payload.Name),
+		Type:        ds.CardType,
+		Fruit:       cards.FruitType(payload.Fruit),
+		Description: payload.Description,
+		Cost:        payload.Cost,
+		HP:          payload.HP,
+		Attack:      payload.Attack,
+		Effect:      payload.Effect,
+		Role:        rolePtr(payload.Role),
+		SweetType:   sweetPtr(payload.SweetType),
+		Version:     versionPtr(payload.Version),
 	}
+	cards.ApplyDatasetDefaults(ds, &card)
+	return card
+}
+
+// handleCreateDraft converts an uploaded image immediately (imageconv is
+// deterministic, so there is no reason to defer it) and queues the card for
+// later batch submission. Nothing reaches PPLALE-web yet.
+func (s *Server) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
+	session, _ := sessionFrom(r.Context())
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
@@ -206,30 +228,265 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	card := cards.Card{
-		ID:          strings.TrimSpace(payload.ID),
-		Name:        strings.TrimSpace(payload.Name),
-		Fruit:       cards.FruitType(payload.Fruit),
-		Description: payload.Description,
-		Cost:        payload.Cost,
-		HP:          payload.HP,
-		Attack:      payload.Attack,
-		Effect:      payload.Effect,
-		Role:        rolePtr(payload.Role),
-		SweetType:   sweetPtr(payload.SweetType),
-		Version:     versionPtr(payload.Version),
-	}
-	cards.ApplyDatasetDefaults(ds, &card)
+	card := buildDraftCard(ds, payload)
+	isEdit := card.ID != ""
 
-	result, err := s.deps.Publisher.Publish(r.Context(), publish.Submission{
-		Kind:        ds.Kind,
-		Card:        card,
-		ImageSlug:   payload.ImageSlug,
-		ImageSource: imageBytes,
-		Submitter: publish.Submitter{
-			DiscordID:   session.DiscordID,
-			DiscordName: session.DisplayName,
-		},
+	var converted *imageconv.Result
+	switch {
+	case len(imageBytes) > 0:
+		slug, err := publish.SanitizeSlug(payload.ImageSlug)
+		if err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{
+				Error: "入力内容を確認してください", Fields: map[string]string{"imageUrl": err.Error()}})
+			return
+		}
+		result, err := imageconv.Convert(imageBytes)
+		if err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{
+				Error: "入力内容を確認してください", Fields: map[string]string{"imageUrl": err.Error()}})
+			return
+		}
+		converted = &result
+		card.ImageURL = ds.ImageURL(slug + ".webp")
+	case !isEdit:
+		writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{
+			Error: "入力内容を確認してください", Fields: map[string]string{"imageUrl": "新規カードには画像が必要です"}})
+		return
+	default:
+		// Edit without a new image: validate against a placeholder URL. The
+		// authoritative check against the real existing image happens again
+		// at publish time, against live upstream data.
+		card.ImageURL = ds.ImageURL("placeholder.webp")
+	}
+
+	if err := cards.Validate(ds, placeholderIDForValidation(ds, card)); err != nil {
+		var invalid cards.ValidationErrors
+		if errors.As(err, &invalid) {
+			fields := map[string]string{}
+			for _, e := range invalid {
+				fields[e.Field] = e.Message
+			}
+			writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{Error: "入力内容を確認してください", Fields: fields})
+			return
+		}
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	draft := store.Draft{
+		DiscordID:   session.DiscordID,
+		DisplayName: session.DisplayName,
+		Kind:        string(ds.Kind),
+		CardID:      card.ID,
+		Name:        card.Name,
+		Fruit:       string(card.Fruit),
+		Description: card.Description,
+		Cost:        card.Cost,
+		HP:          card.HP,
+		Attack:      card.Attack,
+		Effect:      card.Effect,
+		Role:        stringPtr(card.Role),
+		SweetType:   stringPtr(card.SweetType),
+		Version:     stringPtr(card.Version),
+		ImageSlug:   strings.TrimSpace(payload.ImageSlug),
+	}
+	if converted != nil {
+		draft.WebP = converted.WebP
+		draft.OGPPNG = converted.OGPNG
+		draft.SourceBytes = converted.SourceBytes
+		draft.SourceType = converted.SourceType
+	}
+
+	saved, err := s.deps.Store.CreateDraft(r.Context(), draft)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "下書きを保存できませんでした")
+		return
+	}
+
+	s.deps.Logger.Info("draft created", "discord_id", session.DiscordID, "draft_id", saved.ID, "kind", ds.Kind)
+	writeJSON(w, http.StatusCreated, s.draftToAPI(r.Context(), saved))
+}
+
+// placeholderIDForValidation supplies a syntactically valid ID for the fields
+// Validate needs when a new card has not been assigned one yet; the real ID
+// is allocated against live data at publish time.
+func placeholderIDForValidation(ds cards.Dataset, card cards.Card) cards.Card {
+	if card.ID == "" {
+		card.ID = cards.NextID(ds, nil)
+	}
+	return card
+}
+
+func (s *Server) handleListDrafts(w http.ResponseWriter, r *http.Request) {
+	session, _ := sessionFrom(r.Context())
+	drafts, err := s.deps.Store.ListDraftsByUser(r.Context(), session.DiscordID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "下書きを取得できませんでした")
+		return
+	}
+
+	out := make([]api.Draft, len(drafts))
+	for i, d := range drafts {
+		out[i] = s.draftToAPI(r.Context(), d)
+	}
+	writeJSON(w, http.StatusOK, api.DraftsResponse{Drafts: out})
+}
+
+// draftToAPI resolves a display URL for a draft's image: the freshly
+// converted preview when one was uploaded, otherwise the live upstream image
+// for an edit-in-place draft.
+func (s *Server) draftToAPI(ctx context.Context, d store.Draft) api.Draft {
+	out := api.Draft{
+		ID: d.ID, Kind: d.Kind, CardID: d.CardID, IsEdit: d.CardID != "",
+		Name: d.Name, Fruit: d.Fruit, Description: d.Description,
+		Cost: d.Cost, HP: d.HP, Attack: d.Attack,
+		Effect: d.Effect, Role: d.Role, SweetType: d.SweetType, Version: d.Version,
+		ImageSlug: d.ImageSlug, HasNewImage: len(d.WebP) > 0, CreatedAt: d.CreatedAt,
+	}
+	if out.HasNewImage {
+		out.ImageDisplayURL = fmt.Sprintf("/api/drafts/%d/image", d.ID)
+		return out
+	}
+	if out.IsEdit {
+		if ds, err := cards.DatasetFor(cards.Kind(d.Kind)); err == nil {
+			if raw, err := s.deps.CardReader.FileContent(ctx, ds.JSONPath); err == nil {
+				if list, err := cards.Decode(ds, raw); err == nil {
+					for _, c := range list {
+						if c.ID == d.CardID {
+							out.ImageDisplayURL = s.deps.CardReader.RawURL(cards.RepoImagePath(c.ImageURL))
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+func (s *Server) handleDeleteDraft(w http.ResponseWriter, r *http.Request) {
+	session, _ := sessionFrom(r.Context())
+	draft, ok := s.ownedDraft(w, r, session)
+	if !ok {
+		return
+	}
+	if err := s.deps.Store.DeleteDrafts(r.Context(), []int64{draft.ID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "下書きを削除できませんでした")
+		return
+	}
+	writeJSON(w, http.StatusOK, api.StatusResponse{Status: "ok"})
+}
+
+func (s *Server) handleDraftImage(w http.ResponseWriter, r *http.Request) {
+	session, _ := sessionFrom(r.Context())
+	draft, ok := s.ownedDraft(w, r, session)
+	if !ok {
+		return
+	}
+	if len(draft.WebP) == 0 {
+		writeError(w, http.StatusNotFound, "画像がありません")
+		return
+	}
+	w.Header().Set("Content-Type", "image/webp")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Write(draft.WebP)
+}
+
+func (s *Server) handleDraftOGImage(w http.ResponseWriter, r *http.Request) {
+	session, _ := sessionFrom(r.Context())
+	draft, ok := s.ownedDraft(w, r, session)
+	if !ok {
+		return
+	}
+	if len(draft.OGPPNG) == 0 {
+		writeError(w, http.StatusNotFound, "画像がありません")
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Write(draft.OGPPNG)
+}
+
+// ownedDraft loads the {draftID} path parameter and confirms it belongs to
+// the caller (admins may also manage any draft), writing an error response
+// and returning ok=false otherwise.
+func (s *Server) ownedDraft(w http.ResponseWriter, r *http.Request, session auth.Session) (store.Draft, bool) {
+	id, err := strconv.ParseInt(r.PathValue("draftID"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "不正な下書きIDです")
+		return store.Draft{}, false
+	}
+	draft, err := s.deps.Store.GetDraft(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "下書きが見つかりません")
+		return store.Draft{}, false
+	}
+	user, _ := userFrom(r.Context())
+	if draft.DiscordID != session.DiscordID && !user.Role.CanManageUsers() {
+		writeError(w, http.StatusForbidden, "この下書きを操作する権限がありません")
+		return store.Draft{}, false
+	}
+	return draft, true
+}
+
+// handleSubmitDrafts publishes some or all of the caller's queued drafts as a
+// single pull request.
+func (s *Server) handleSubmitDrafts(w http.ResponseWriter, r *http.Request) {
+	session, _ := sessionFrom(r.Context())
+	if !s.limiter.Allow(session.DiscordID) {
+		writeError(w, http.StatusTooManyRequests, "提出が多すぎます。しばらく待ってから再度お試しください")
+		return
+	}
+
+	var body api.SubmitDraftsRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "リクエストが不正です")
+			return
+		}
+	}
+
+	drafts, err := s.deps.Store.ListDraftsByUser(r.Context(), session.DiscordID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "下書きを取得できませんでした")
+		return
+	}
+	if len(body.IDs) > 0 {
+		wanted := make(map[int64]bool, len(body.IDs))
+		for _, id := range body.IDs {
+			wanted[id] = true
+		}
+		filtered := drafts[:0]
+		for _, d := range drafts {
+			if wanted[d.ID] {
+				filtered = append(filtered, d)
+			}
+		}
+		drafts = filtered
+	}
+	if len(drafts) == 0 {
+		writeError(w, http.StatusBadRequest, "提出するカードがありません")
+		return
+	}
+
+	items := make([]publish.Item, len(drafts))
+	for i, d := range drafts {
+		card := cards.Card{
+			ID: d.CardID, Name: d.Name, Fruit: cards.FruitType(d.Fruit), Description: d.Description,
+			Cost: d.Cost, HP: d.HP, Attack: d.Attack, Effect: d.Effect,
+			Role: rolePtr(d.Role), SweetType: sweetPtr(d.SweetType), Version: versionPtr(d.Version),
+		}
+		item := publish.Item{Kind: cards.Kind(d.Kind), Card: card, ImageSlug: d.ImageSlug}
+		if len(d.WebP) > 0 {
+			item.Image = &imageconv.Result{
+				WebP: d.WebP, OGPNG: d.OGPPNG, SourceBytes: d.SourceBytes, SourceType: d.SourceType,
+			}
+		}
+		items[i] = item
+	}
+
+	result, err := s.deps.Publisher.PublishBatch(r.Context(), items, publish.Submitter{
+		DiscordID: session.DiscordID, DiscordName: session.DisplayName,
 	})
 	if err != nil {
 		var invalid cards.ValidationErrors
@@ -241,21 +498,19 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{Error: "入力内容を確認してください", Fields: fields})
 			return
 		}
-		s.deps.Logger.Error("publish failed", "discord_id", session.DiscordID, "err", err)
+		s.deps.Logger.Error("publish batch failed", "discord_id", session.DiscordID, "err", err)
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("PR の作成に失敗しました: %v", err))
 		return
 	}
 
+	submissionCards := make([]api.SubmissionCard, len(result.Cards))
+	for i, c := range result.Cards {
+		submissionCards[i] = api.SubmissionCard{Kind: string(c.Kind), CardID: c.CardID, CardName: c.CardName, IsEdit: c.IsEdit}
+	}
 	record, err := s.deps.Store.CreateSubmission(r.Context(), store.Submission{
-		DiscordID:   session.DiscordID,
-		DisplayName: session.DisplayName,
-		Kind:        string(ds.Kind),
-		CardID:      result.CardID,
-		CardName:    card.Name,
-		Branch:      result.Branch,
-		PRNumber:    result.PullRequest.Number,
-		PRURL:       result.PullRequest.HTMLURL,
-		Status:      store.StatusOpen,
+		DiscordID: session.DiscordID, DisplayName: session.DisplayName,
+		Branch: result.Branch, PRNumber: result.PullRequest.Number, PRURL: result.PullRequest.HTMLURL,
+		Status: store.StatusOpen, Cards: submissionCards,
 	})
 	if err != nil {
 		// The pull request exists upstream; losing the audit row must not look
@@ -263,14 +518,19 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		s.deps.Logger.Error("audit write failed", "pr", result.PullRequest.Number, "err", err)
 	}
 
-	s.deps.Logger.Info("submission published",
-		"discord_id", session.DiscordID, "card", result.CardID, "pr", result.PullRequest.HTMLURL)
+	submittedIDs := make([]int64, len(drafts))
+	for i, d := range drafts {
+		submittedIDs[i] = d.ID
+	}
+	if err := s.deps.Store.DeleteDrafts(r.Context(), submittedIDs); err != nil {
+		s.deps.Logger.Error("draft cleanup failed", "err", err)
+	}
+
+	s.deps.Logger.Info("batch published",
+		"discord_id", session.DiscordID, "cards", len(result.Cards), "pr", result.PullRequest.HTMLURL)
 	writeJSON(w, http.StatusCreated, api.SubmitResult{
-		CardID:     result.CardID,
-		Branch:     result.Branch,
-		Files:      result.Files,
-		PRURL:      result.PullRequest.HTMLURL,
-		PRNumber:   result.PullRequest.Number,
+		Branch: result.Branch, Files: result.Files,
+		PRURL: result.PullRequest.HTMLURL, PRNumber: result.PullRequest.Number,
 		Submission: &record,
 	})
 }

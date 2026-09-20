@@ -44,19 +44,27 @@ export const StatusOpen: SubmissionStatus = "pr_open";
 export const StatusMerged: SubmissionStatus = "merged";
 export const StatusClosed: SubmissionStatus = "closed";
 /**
+ * SubmissionCard is one card inside a submitted pull request. A single PR can
+ * bundle several cards, possibly across different dataset files.
+ */
+export interface SubmissionCard {
+  kind: string;
+  cardId: string;
+  cardName: string;
+  isEdit: boolean;
+}
+/**
  * Submission is the audit record of one pull request opened by the CMS.
  */
 export interface Submission {
   id: number /* int64 */;
   discordId: string;
   displayName: string;
-  kind: string;
-  cardId: string;
-  cardName: string;
   branch: string;
   prNumber: number /* int */;
   prUrl: string;
   status: SubmissionStatus;
+  cards: SubmissionCard[];
   createdAt: string;
   updatedAt: string;
 }
@@ -147,15 +155,57 @@ export interface SubmitPayload {
   imageSlug: string;
 }
 /**
- * SubmitResult reports the pull request a submission opened.
+ * SubmitResult reports the pull request a batch submission opened.
  */
 export interface SubmitResult {
-  cardId: string;
   branch: string;
   files: string[];
   prUrl: string;
   prNumber: number /* int */;
   submission?: Submission;
+}
+/**
+ * Draft is one card queued for submission but not yet sent to PPLALE-web. Its
+ * image has already been converted to WebP/OGP-PNG so the queue previews
+ * exactly what a pull request would contain.
+ */
+export interface Draft {
+  id: number /* int64 */;
+  kind: string;
+  cardId: string;
+  isEdit: boolean;
+  name: string;
+  fruit: string;
+  description: string;
+  cost: number /* int */;
+  hp: number /* int */;
+  attack: number /* int */;
+  effect?: string;
+  role?: string;
+  sweetType?: string;
+  version?: string;
+  imageSlug: string;
+  /**
+   * ImageDisplayURL always resolves to something showable: the newly
+   * converted draft image when one was uploaded, otherwise the current
+   * upstream image for an edit-in-place draft.
+   */
+  imageDisplayUrl: string;
+  hasNewImage: boolean;
+  createdAt: string;
+}
+/**
+ * DraftsResponse lists the current user's queued drafts.
+ */
+export interface DraftsResponse {
+  drafts: Draft[];
+}
+/**
+ * SubmitDraftsRequest selects which queued drafts to publish together. An
+ * empty/omitted IDs list means "everything currently queued".
+ */
+export interface SubmitDraftsRequest {
+  ids?: number /* int64 */[];
 }
 /**
  * UsersResponse is the allow list.

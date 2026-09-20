@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -127,11 +128,15 @@ func (p *Postgres) DeleteUser(ctx context.Context, discordID string) error {
 }
 
 func (p *Postgres) CreateSubmission(ctx context.Context, s Submission) (Submission, error) {
-	err := p.pool.QueryRow(ctx, `
-		INSERT INTO submissions (discord_id, display_name, kind, card_id, card_name, branch, pr_number, pr_url, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	cardsJSON, err := json.Marshal(s.Cards)
+	if err != nil {
+		return Submission{}, fmt.Errorf("store: submission cards の直列化に失敗しました: %w", err)
+	}
+	err = p.pool.QueryRow(ctx, `
+		INSERT INTO submissions (discord_id, display_name, branch, pr_number, pr_url, status, cards)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
 		RETURNING id, created_at, updated_at`,
-		s.DiscordID, s.DisplayName, s.Kind, s.CardID, s.CardName, s.Branch, s.PRNumber, s.PRURL, s.Status).
+		s.DiscordID, s.DisplayName, s.Branch, s.PRNumber, s.PRURL, s.Status, cardsJSON).
 		Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt)
 	return s, err
 }
@@ -141,7 +146,7 @@ func (p *Postgres) ListSubmissions(ctx context.Context, limit int) ([]Submission
 		limit = 50
 	}
 	rows, err := p.pool.Query(ctx, `
-		SELECT id, discord_id, display_name, kind, card_id, card_name, branch, pr_number, pr_url, status, created_at, updated_at
+		SELECT id, discord_id, display_name, branch, pr_number, pr_url, status, cards, created_at, updated_at
 		FROM submissions ORDER BY id DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -151,9 +156,13 @@ func (p *Postgres) ListSubmissions(ctx context.Context, limit int) ([]Submission
 	var out []Submission
 	for rows.Next() {
 		var s Submission
-		if err := rows.Scan(&s.ID, &s.DiscordID, &s.DisplayName, &s.Kind, &s.CardID, &s.CardName,
-			&s.Branch, &s.PRNumber, &s.PRURL, &s.Status, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var cardsJSON []byte
+		if err := rows.Scan(&s.ID, &s.DiscordID, &s.DisplayName,
+			&s.Branch, &s.PRNumber, &s.PRURL, &s.Status, &cardsJSON, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, err
+		}
+		if err := json.Unmarshal(cardsJSON, &s.Cards); err != nil {
+			return nil, fmt.Errorf("store: submission cards の復元に失敗しました: %w", err)
 		}
 		out = append(out, s)
 	}
@@ -170,4 +179,65 @@ func (p *Postgres) UpdateSubmissionStatusByPR(ctx context.Context, prNumber int,
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (p *Postgres) CreateDraft(ctx context.Context, d Draft) (Draft, error) {
+	err := p.pool.QueryRow(ctx, `
+		INSERT INTO drafts (discord_id, display_name, kind, card_id, name, fruit, description,
+			cost, hp, attack, effect, role, sweet_type, version, image_slug,
+			webp, ogp_png, source_bytes, source_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		RETURNING id, created_at`,
+		d.DiscordID, d.DisplayName, d.Kind, d.CardID, d.Name, d.Fruit, d.Description,
+		d.Cost, d.HP, d.Attack, d.Effect, d.Role, d.SweetType, d.Version, d.ImageSlug,
+		d.WebP, d.OGPPNG, d.SourceBytes, d.SourceType).
+		Scan(&d.ID, &d.CreatedAt)
+	return d, err
+}
+
+const draftColumns = `id, discord_id, display_name, kind, card_id, name, fruit, description,
+	cost, hp, attack, effect, role, sweet_type, version, image_slug,
+	webp, ogp_png, source_bytes, source_type, created_at`
+
+func scanDraft(row pgx.Row) (Draft, error) {
+	var d Draft
+	err := row.Scan(&d.ID, &d.DiscordID, &d.DisplayName, &d.Kind, &d.CardID, &d.Name, &d.Fruit, &d.Description,
+		&d.Cost, &d.HP, &d.Attack, &d.Effect, &d.Role, &d.SweetType, &d.Version, &d.ImageSlug,
+		&d.WebP, &d.OGPPNG, &d.SourceBytes, &d.SourceType, &d.CreatedAt)
+	return d, err
+}
+
+func (p *Postgres) ListDraftsByUser(ctx context.Context, discordID string) ([]Draft, error) {
+	rows, err := p.pool.Query(ctx, `SELECT `+draftColumns+`
+		FROM drafts WHERE discord_id = $1 ORDER BY id`, discordID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Draft
+	for rows.Next() {
+		d, err := scanDraft(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) GetDraft(ctx context.Context, id int64) (Draft, error) {
+	d, err := scanDraft(p.pool.QueryRow(ctx, `SELECT `+draftColumns+` FROM drafts WHERE id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Draft{}, ErrNotFound
+	}
+	return d, err
+}
+
+func (p *Postgres) DeleteDrafts(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := p.pool.Exec(ctx, `DELETE FROM drafts WHERE id = ANY($1)`, ids)
+	return err
 }

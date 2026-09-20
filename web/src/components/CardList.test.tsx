@@ -25,17 +25,25 @@ function card(overrides: Partial<Card>): Card {
 }
 
 describe('CardList', () => {
-  it('renders each card image from imageDisplayUrl, not the raw imageUrl', () => {
+  it('defaults to the image-first grid view', () => {
     const cards = [card({ id: 'y_0', name: 'かがり' })];
     const { container } = render(<CardList cards={cards} onEdit={vi.fn()} />);
 
-    // Decorative thumbnail (alt="") deliberately has no accessible role, so
-    // query it directly rather than through getByRole('img').
-    const img = container.querySelector('img.card-thumb');
+    const img = container.querySelector('img.grid-thumb');
     expect(img?.getAttribute('src')).toBe(cards[0].imageDisplayUrl);
     // imageUrl ("/images/...") is site-relative and not browser-fetchable on
     // its own; the thumbnail must never fall back to it.
     expect(img?.getAttribute('src')).not.toBe(cards[0].imageUrl);
+    expect(container.querySelector('.grid-overlay')?.textContent).toContain('かがり');
+  });
+
+  it('switches to the list view on request', async () => {
+    const cards = [card({ id: 'y_0', name: 'かがり' })];
+    const { container } = render(<CardList cards={cards} onEdit={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'リスト' }));
+    expect(container.querySelector('img.card-thumb')).not.toBeNull();
+    expect(container.querySelector('img.grid-thumb')).toBeNull();
   });
 
   it('filters by name or id and still calls onEdit with the full card', async () => {
@@ -44,7 +52,7 @@ describe('CardList', () => {
     const { container } = render(<CardList cards={cards} onEdit={onEdit} />);
 
     await userEvent.type(screen.getByPlaceholderText(/検索/), 'とここ');
-    expect(container.querySelectorAll('img.card-thumb')).toHaveLength(1);
+    expect(container.querySelectorAll('img.grid-thumb')).toHaveLength(1);
 
     await userEvent.click(screen.getByRole('button', { name: /とここ/ }));
     expect(onEdit).toHaveBeenCalledWith(cards[1]);

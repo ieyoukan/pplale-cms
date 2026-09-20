@@ -12,6 +12,7 @@ import (
 
 	"github.com/ieyoukan/pplale-cms/internal/cards"
 	"github.com/ieyoukan/pplale-cms/internal/ghapp"
+	"github.com/ieyoukan/pplale-cms/internal/imageconv"
 )
 
 type fakeRepo struct {
@@ -68,13 +69,19 @@ const yojoFixture = `{
 }
 `
 
+var submitter = Submitter{DiscordID: "123456789012345678", DiscordName: "creator#1"}
+
 func newPublisher() (*Publisher, *fakeRepo) {
 	repo := &fakeRepo{files: map[string][]byte{"src/data/yojo.json": []byte(yojoFixture)}}
 	return &Publisher{Repo: repo}, repo
 }
 
-func newSubmission() Submission {
-	return Submission{
+func newItem() Item {
+	img, err := imageconv.Convert(testPNG())
+	if err != nil {
+		panic(err)
+	}
+	return Item{
 		Kind: cards.KindYojo,
 		Card: cards.Card{
 			Name:  "あたらしい子",
@@ -83,24 +90,24 @@ func newSubmission() Submission {
 			Effect: strPtr("テスト効果"),
 			Role:   rolePtr(cards.RoleNone),
 		},
-		ImageSlug:   "atarashii_ko",
-		ImageSource: testPNG(),
-		Submitter:   Submitter{DiscordID: "123456789012345678", DiscordName: "creator#1"},
+		ImageSlug: "atarashii_ko",
+		Image:     &img,
 	}
 }
 
-func TestPublishNewCard(t *testing.T) {
+func TestPublishBatchSingleNewCard(t *testing.T) {
 	p, repo := newPublisher()
 
-	got, err := p.Publish(context.Background(), newSubmission())
+	got, err := p.PublishBatch(context.Background(), []Item{newItem()}, submitter)
 	if err != nil {
-		t.Fatalf("Publish: %v", err)
+		t.Fatalf("PublishBatch: %v", err)
 	}
 
 	// IDs come from live upstream data and never reuse the y_1..y_3 gap.
-	if got.CardID != "y_5" {
-		t.Errorf("CardID = %q, want y_5", got.CardID)
+	if len(got.Cards) != 1 || got.Cards[0].CardID != "y_5" {
+		t.Fatalf("Cards = %+v, want a single y_5", got.Cards)
 	}
+	// A single-card batch keeps the readable cms/<kind>-<id> branch name.
 	if got.Branch != "cms/yojo-y_5" {
 		t.Errorf("Branch = %q", got.Branch)
 	}
@@ -114,9 +121,8 @@ func TestPublishNewCard(t *testing.T) {
 	in := repo.created[0]
 
 	wantFiles := map[string]bool{
-		"src/data/yojo.json":                   false,
-		"public/images/yojo/atarashii_ko.webp": false,
-		// OGP用PNGが同一PRに含まれないと本番のOGP画像が壊れる。
+		"src/data/yojo.json":                    false,
+		"public/images/yojo/atarashii_ko.webp":  false,
 		"public/og-cards/yojo/atarashii_ko.png": false,
 	}
 	for _, f := range in.Files {
@@ -167,24 +173,27 @@ func TestPublishNewCard(t *testing.T) {
 	}
 }
 
-func TestPublishEditKeepsExistingImage(t *testing.T) {
+func TestPublishBatchEditKeepsExistingImage(t *testing.T) {
 	p, repo := newPublisher()
 
-	sub := newSubmission()
-	sub.Card.ID = "y_0"
-	sub.Card.Name = "かがり(改)"
-	sub.ImageSource = nil
-	sub.ImageSlug = ""
+	item := newItem()
+	item.Card.ID = "y_0"
+	item.Card.Name = "かがり(改)"
+	item.Image = nil
+	item.ImageSlug = ""
 
-	got, err := p.Publish(context.Background(), sub)
+	got, err := p.PublishBatch(context.Background(), []Item{item}, submitter)
 	if err != nil {
-		t.Fatalf("Publish: %v", err)
+		t.Fatalf("PublishBatch: %v", err)
 	}
 	if got.Branch != "cms/yojo-y_0" {
 		t.Errorf("Branch = %q", got.Branch)
 	}
 	if len(got.Files) != 1 || got.Files[0] != "src/data/yojo.json" {
 		t.Errorf("Files = %v, want only the dataset", got.Files)
+	}
+	if !got.Cards[0].IsEdit {
+		t.Error("IsEdit = false, want true")
 	}
 
 	in := repo.created[0]
@@ -205,26 +214,129 @@ func TestPublishEditKeepsExistingImage(t *testing.T) {
 	}
 }
 
-func TestPublishRejectsUnknownIDOnEdit(t *testing.T) {
+func TestPublishBatchMultipleCardsSameDatasetShareTheRead(t *testing.T) {
 	p, repo := newPublisher()
-	sub := newSubmission()
-	sub.Card.ID = "y_999"
-	sub.ImageSource = nil
 
-	if _, err := p.Publish(context.Background(), sub); err == nil {
-		t.Fatal("expected an error for an unknown card ID")
+	first := newItem()
+	first.Card.Name = "一人目"
+	second := newItem()
+	second.Card.Name = "二人目"
+	second.ImageSlug = "futarime"
+
+	got, err := p.PublishBatch(context.Background(), []Item{first, second}, submitter)
+	if err != nil {
+		t.Fatalf("PublishBatch: %v", err)
 	}
-	if len(repo.created) != 0 {
-		t.Error("a pull request was opened for an invalid submission")
+
+	// Two new cards in the same batch must not collide on the same ID.
+	if len(got.Cards) != 2 || got.Cards[0].CardID != "y_5" || got.Cards[1].CardID != "y_6" {
+		t.Fatalf("Cards = %+v, want y_5 then y_6", got.Cards)
+	}
+	if !strings.HasPrefix(got.Branch, "cms/batch-") {
+		t.Errorf("Branch = %q, want a cms/batch-* name for a multi-card batch", got.Branch)
+	}
+
+	in := repo.created[0]
+	// Exactly one dataset write even though two cards targeted it.
+	datasetWrites := 0
+	for _, f := range in.Files {
+		if f.Path == "src/data/yojo.json" {
+			datasetWrites++
+		}
+	}
+	if datasetWrites != 1 {
+		t.Errorf("src/data/yojo.json was written %d times, want 1", datasetWrites)
+	}
+
+	ds, _ := cards.DatasetFor(cards.KindYojo)
+	list, _ := cards.Decode(ds, fileContent(t, in.Files, "src/data/yojo.json"))
+	if len(list) != 4 {
+		t.Fatalf("dataset has %d cards, want 4 (2 existing + 2 new)", len(list))
+	}
+	if list[2].Name != "一人目" || list[3].Name != "二人目" {
+		t.Errorf("appended order = %q, %q", list[2].Name, list[3].Name)
+	}
+
+	if !strings.Contains(in.Title, "2件") {
+		t.Errorf("title = %q, want it to mention the batch size", in.Title)
+	}
+	if !strings.Contains(in.Body, "一人目") || !strings.Contains(in.Body, "二人目") {
+		t.Errorf("body does not list both cards:\n%s", in.Body)
 	}
 }
 
-func TestPublishRequiresImageForNewCard(t *testing.T) {
-	p, repo := newPublisher()
-	sub := newSubmission()
-	sub.ImageSource = nil
+func TestPublishBatchAcrossDifferentDatasets(t *testing.T) {
+	repo := &fakeRepo{files: map[string][]byte{
+		"src/data/yojo.json":  []byte(yojoFixture),
+		"src/data/sweet.json": []byte("{\n  \"sweet\": []\n}\n"),
+	}}
+	p := &Publisher{Repo: repo}
 
-	if _, err := p.Publish(context.Background(), sub); err == nil {
+	yojoItem := newItem()
+	sweetImg, err := imageconv.Convert(testPNG())
+	if err != nil {
+		t.Fatalf("imageconv.Convert: %v", err)
+	}
+	sweetItem := Item{
+		Kind: cards.KindSweet,
+		Card: cards.Card{
+			Name: "あたらしいお菓子", Fruit: cards.FruitAll,
+			SweetType: sweetPtr(cards.SweetCake),
+		},
+		ImageSlug: "new_sweet",
+		Image:     &sweetImg,
+	}
+
+	got, err := p.PublishBatch(context.Background(), []Item{yojoItem, sweetItem}, submitter)
+	if err != nil {
+		t.Fatalf("PublishBatch: %v", err)
+	}
+	if len(got.Cards) != 2 {
+		t.Fatalf("Cards = %+v, want 2", got.Cards)
+	}
+	if got.Cards[0].Kind != cards.KindYojo || got.Cards[1].Kind != cards.KindSweet {
+		t.Errorf("Cards kinds = %v", got.Cards)
+	}
+
+	in := repo.created[0]
+	for _, want := range []string{"src/data/yojo.json", "src/data/sweet.json",
+		"public/images/yojo/atarashii_ko.webp", "public/images/sweet/new_sweet.webp"} {
+		if fileContentOrNil(in.Files, want) == nil {
+			t.Errorf("pull request is missing %s", want)
+		}
+	}
+}
+
+func TestPublishBatchRejectsEmpty(t *testing.T) {
+	p, repo := newPublisher()
+	if _, err := p.PublishBatch(context.Background(), nil, submitter); err == nil {
+		t.Fatal("expected an error for an empty batch")
+	}
+	if len(repo.created) != 0 {
+		t.Error("a pull request was opened for an empty batch")
+	}
+}
+
+func TestPublishBatchRejectsUnknownIDOnEdit(t *testing.T) {
+	p, repo := newPublisher()
+	item := newItem()
+	item.Card.ID = "y_999"
+	item.Image = nil
+
+	if _, err := p.PublishBatch(context.Background(), []Item{item}, submitter); err == nil {
+		t.Fatal("expected an error for an unknown card ID")
+	}
+	if len(repo.created) != 0 {
+		t.Error("a pull request was opened for an invalid batch")
+	}
+}
+
+func TestPublishBatchRequiresImageForNewCard(t *testing.T) {
+	p, repo := newPublisher()
+	item := newItem()
+	item.Image = nil
+
+	if _, err := p.PublishBatch(context.Background(), []Item{item}, submitter); err == nil {
 		t.Fatal("expected an error when a new card has no image")
 	}
 	if len(repo.created) != 0 {
@@ -232,22 +344,19 @@ func TestPublishRequiresImageForNewCard(t *testing.T) {
 	}
 }
 
-func TestPublishRequiresSubmitter(t *testing.T) {
+func TestPublishBatchRequiresSubmitter(t *testing.T) {
 	p, _ := newPublisher()
-	sub := newSubmission()
-	sub.Submitter.DiscordID = ""
-
-	if _, err := p.Publish(context.Background(), sub); err == nil {
+	if _, err := p.PublishBatch(context.Background(), []Item{newItem()}, Submitter{}); err == nil {
 		t.Fatal("expected an error when the submitter is unknown")
 	}
 }
 
-func TestPublishRejectsInvalidCardBeforeOpeningPR(t *testing.T) {
+func TestPublishBatchRejectsInvalidCardBeforeOpeningPR(t *testing.T) {
 	p, repo := newPublisher()
-	sub := newSubmission()
-	sub.Card.Fruit = "banana"
+	item := newItem()
+	item.Card.Fruit = "banana"
 
-	_, err := p.Publish(context.Background(), sub)
+	_, err := p.PublishBatch(context.Background(), []Item{item}, submitter)
 	if err == nil {
 		t.Fatal("expected a validation error")
 	}
@@ -259,11 +368,28 @@ func TestPublishRejectsInvalidCardBeforeOpeningPR(t *testing.T) {
 	}
 }
 
-func TestPublishPropagatesFetchFailure(t *testing.T) {
+// One invalid card in a batch must not let the valid ones through partway.
+func TestPublishBatchRejectsWholeBatchOnOneBadCard(t *testing.T) {
+	p, repo := newPublisher()
+	good := newItem()
+	good.Card.Name = "いいカード"
+	bad := newItem()
+	bad.Card.Name = "だめなカード"
+	bad.Card.Cost = -1
+
+	if _, err := p.PublishBatch(context.Background(), []Item{good, bad}, submitter); err == nil {
+		t.Fatal("expected a validation error")
+	}
+	if len(repo.created) != 0 {
+		t.Error("a pull request was opened despite one invalid card")
+	}
+}
+
+func TestPublishBatchPropagatesFetchFailure(t *testing.T) {
 	repo := &fakeRepo{fetchErr: errors.New("boom")}
 	p := &Publisher{Repo: repo}
 
-	if _, err := p.Publish(context.Background(), newSubmission()); err == nil {
+	if _, err := p.PublishBatch(context.Background(), []Item{newItem()}, submitter); err == nil {
 		t.Fatal("expected the upstream fetch error to surface")
 	}
 }
@@ -296,12 +422,12 @@ func TestSanitizeSlug(t *testing.T) {
 	}
 }
 
-func TestPublishRejectsTraversalSlug(t *testing.T) {
+func TestPublishBatchRejectsTraversalSlug(t *testing.T) {
 	p, repo := newPublisher()
-	sub := newSubmission()
-	sub.ImageSlug = "../../../public/index"
+	item := newItem()
+	item.ImageSlug = "../../../public/index"
 
-	if _, err := p.Publish(context.Background(), sub); err == nil {
+	if _, err := p.PublishBatch(context.Background(), []Item{item}, submitter); err == nil {
 		t.Fatal("expected a slug validation error")
 	}
 	if len(repo.created) != 0 {
@@ -309,50 +435,50 @@ func TestPublishRejectsTraversalSlug(t *testing.T) {
 	}
 }
 
-func TestPublishSweetRequiresSweetTypeField(t *testing.T) {
+func TestPublishBatchSweetRequiresSweetTypeField(t *testing.T) {
 	repo := &fakeRepo{files: map[string][]byte{
 		"src/data/sweet.json": []byte("{\n  \"sweet\": []\n}\n"),
 	}}
 	p := &Publisher{Repo: repo}
 
-	sub := newSubmission()
-	sub.Kind = cards.KindSweet
-	sub.Card.Role = nil
-	sub.ImageSlug = "new_sweet"
+	item := newItem()
+	item.Kind = cards.KindSweet
+	item.Card.Role = nil
+	item.ImageSlug = "new_sweet"
 
-	if _, err := p.Publish(context.Background(), sub); err == nil {
+	if _, err := p.PublishBatch(context.Background(), []Item{item}, submitter); err == nil {
 		t.Fatal("expected an error when sweetType is missing")
 	}
 
-	sub.Card.SweetType = sweetPtr(cards.SweetCake)
-	got, err := p.Publish(context.Background(), sub)
+	item.Card.SweetType = sweetPtr(cards.SweetCake)
+	got, err := p.PublishBatch(context.Background(), []Item{item}, submitter)
 	if err != nil {
-		t.Fatalf("Publish: %v", err)
+		t.Fatalf("PublishBatch: %v", err)
 	}
-	if got.CardID != "s_0" {
-		t.Errorf("CardID = %q, want s_0 for an empty dataset", got.CardID)
+	if got.Cards[0].CardID != "s_0" {
+		t.Errorf("CardID = %q, want s_0 for an empty dataset", got.Cards[0].CardID)
 	}
 	if got.Files[1] != "public/images/sweet/new_sweet.webp" {
 		t.Errorf("image path = %q, want the sweet directory", got.Files[1])
 	}
 }
 
-func TestPublishTokenYojoSharesYojoImageDirectory(t *testing.T) {
+func TestPublishBatchTokenYojoSharesYojoImageDirectory(t *testing.T) {
 	repo := &fakeRepo{files: map[string][]byte{
 		"src/data/tokenYojo.json": []byte("{\n  \"tokenYojo\": []\n}\n"),
 	}}
 	p := &Publisher{Repo: repo}
 
-	sub := newSubmission()
-	sub.Kind = cards.KindTokenYojo
-	sub.ImageSlug = "token_card"
+	item := newItem()
+	item.Kind = cards.KindTokenYojo
+	item.ImageSlug = "token_card"
 
-	got, err := p.Publish(context.Background(), sub)
+	got, err := p.PublishBatch(context.Background(), []Item{item}, submitter)
 	if err != nil {
-		t.Fatalf("Publish: %v", err)
+		t.Fatalf("PublishBatch: %v", err)
 	}
-	if got.CardID != "yt_0" {
-		t.Errorf("CardID = %q, want yt_0", got.CardID)
+	if got.Cards[0].CardID != "yt_0" {
+		t.Errorf("CardID = %q, want yt_0", got.Cards[0].CardID)
 	}
 	want := []string{"src/data/tokenYojo.json", "public/images/yojo/token_card.webp", "public/og-cards/yojo/token_card.png"}
 	for i, path := range want {
@@ -362,17 +488,21 @@ func TestPublishTokenYojoSharesYojoImageDirectory(t *testing.T) {
 	}
 }
 
-func fileContent(t *testing.T, files any, path string) []byte {
+func fileContent(t *testing.T, files []ghapp.File, path string) []byte {
 	t.Helper()
-	switch v := files.(type) {
-	case []ghapp.File:
-		for _, f := range v {
-			if f.Path == path {
-				return f.Content
-			}
-		}
+	if content := fileContentOrNil(files, path); content != nil {
+		return content
 	}
 	t.Fatalf("file %s not found", path)
+	return nil
+}
+
+func fileContentOrNil(files []ghapp.File, path string) []byte {
+	for _, f := range files {
+		if f.Path == path {
+			return f.Content
+		}
+	}
 	return nil
 }
 

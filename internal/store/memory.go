@@ -17,15 +17,19 @@ type Memory struct {
 	users       map[string]User
 	submissions []Submission
 	nextID      int64
+	drafts      map[int64]Draft
+	nextDraftID int64
 	now         func() time.Time
 }
 
 // NewMemory builds an empty in-memory store.
 func NewMemory() *Memory {
 	return &Memory{
-		sessions: map[string]auth.Session{},
-		users:    map[string]User{},
-		nextID:   1,
+		sessions:    map[string]auth.Session{},
+		users:       map[string]User{},
+		drafts:      map[int64]Draft{},
+		nextID:      1,
+		nextDraftID: 1,
 	}
 }
 
@@ -147,6 +151,48 @@ func (m *Memory) UpdateSubmissionStatusByPR(_ context.Context, prNumber int, sta
 	}
 	if !found {
 		return ErrNotFound
+	}
+	return nil
+}
+
+func (m *Memory) CreateDraft(_ context.Context, d Draft) (Draft, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d.ID = m.nextDraftID
+	m.nextDraftID++
+	d.CreatedAt = m.clock()
+	m.drafts[d.ID] = d
+	return d, nil
+}
+
+func (m *Memory) ListDraftsByUser(_ context.Context, discordID string) ([]Draft, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]Draft, 0, len(m.drafts))
+	for _, d := range m.drafts {
+		if d.DiscordID == discordID {
+			out = append(out, d)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+func (m *Memory) GetDraft(_ context.Context, id int64) (Draft, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	d, ok := m.drafts[id]
+	if !ok {
+		return Draft{}, ErrNotFound
+	}
+	return d, nil
+}
+
+func (m *Memory) DeleteDrafts(_ context.Context, ids []int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range ids {
+		delete(m.drafts, id)
 	}
 	return nil
 }

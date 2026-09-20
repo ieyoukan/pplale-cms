@@ -44,18 +44,25 @@ const (
 	StatusClosed SubmissionStatus = "closed"
 )
 
+// SubmissionCard is one card inside a submitted pull request. A single PR can
+// bundle several cards, possibly across different dataset files.
+type SubmissionCard struct {
+	Kind     string `json:"kind"`
+	CardID   string `json:"cardId"`
+	CardName string `json:"cardName"`
+	IsEdit   bool   `json:"isEdit"`
+}
+
 // Submission is the audit record of one pull request opened by the CMS.
 type Submission struct {
 	ID          int64            `json:"id"`
 	DiscordID   string           `json:"discordId"`
 	DisplayName string           `json:"displayName"`
-	Kind        string           `json:"kind"`
-	CardID      string           `json:"cardId"`
-	CardName    string           `json:"cardName"`
 	Branch      string           `json:"branch"`
 	PRNumber    int              `json:"prNumber"`
 	PRURL       string           `json:"prUrl"`
 	Status      SubmissionStatus `json:"status"`
+	Cards       []SubmissionCard `json:"cards"`
 	CreatedAt   time.Time        `json:"createdAt"`
 	UpdatedAt   time.Time        `json:"updatedAt"`
 }
@@ -136,14 +143,51 @@ type SubmitPayload struct {
 	ImageSlug   string  `json:"imageSlug"`
 }
 
-// SubmitResult reports the pull request a submission opened.
+// SubmitResult reports the pull request a batch submission opened.
 type SubmitResult struct {
-	CardID     string      `json:"cardId"`
 	Branch     string      `json:"branch"`
 	Files      []string    `json:"files"`
 	PRURL      string      `json:"prUrl"`
 	PRNumber   int         `json:"prNumber"`
 	Submission *Submission `json:"submission"`
+}
+
+// Draft is one card queued for submission but not yet sent to PPLALE-web. Its
+// image has already been converted to WebP/OGP-PNG so the queue previews
+// exactly what a pull request would contain.
+type Draft struct {
+	ID          int64   `json:"id"`
+	Kind        string  `json:"kind"`
+	CardID      string  `json:"cardId"`
+	IsEdit      bool    `json:"isEdit"`
+	Name        string  `json:"name"`
+	Fruit       string  `json:"fruit"`
+	Description string  `json:"description"`
+	Cost        int     `json:"cost"`
+	HP          int     `json:"hp"`
+	Attack      int     `json:"attack"`
+	Effect      *string `json:"effect,omitempty"`
+	Role        *string `json:"role,omitempty"`
+	SweetType   *string `json:"sweetType,omitempty"`
+	Version     *string `json:"version,omitempty"`
+	ImageSlug   string  `json:"imageSlug"`
+	// ImageDisplayURL always resolves to something showable: the newly
+	// converted draft image when one was uploaded, otherwise the current
+	// upstream image for an edit-in-place draft.
+	ImageDisplayURL string    `json:"imageDisplayUrl"`
+	HasNewImage     bool      `json:"hasNewImage"`
+	CreatedAt       time.Time `json:"createdAt"`
+}
+
+// DraftsResponse lists the current user's queued drafts.
+type DraftsResponse struct {
+	Drafts []Draft `json:"drafts"`
+}
+
+// SubmitDraftsRequest selects which queued drafts to publish together. An
+// empty/omitted IDs list means "everything currently queued".
+type SubmitDraftsRequest struct {
+	IDs []int64 `json:"ids,omitempty"`
 }
 
 // UsersResponse is the allow list.

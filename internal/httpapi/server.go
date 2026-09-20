@@ -91,7 +91,14 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/me", s.authenticated(s.handleMe))
 	s.mux.Handle("GET /api/datasets", s.authenticated(s.handleDatasets))
 	s.mux.Handle("GET /api/cards", s.authenticated(s.handleCards))
-	s.mux.Handle("POST /api/submissions", s.requireSubmit(s.handleSubmit))
+
+	s.mux.Handle("POST /api/drafts", s.requireSubmit(s.handleCreateDraft))
+	s.mux.Handle("GET /api/drafts", s.authenticated(s.handleListDrafts))
+	s.mux.Handle("DELETE /api/drafts/{draftID}", s.authenticated(s.handleDeleteDraft))
+	s.mux.Handle("GET /api/drafts/{draftID}/image", s.authenticated(s.handleDraftImage))
+	s.mux.Handle("GET /api/drafts/{draftID}/ogp", s.authenticated(s.handleDraftOGImage))
+	s.mux.Handle("POST /api/drafts/submit", s.requireSubmit(s.handleSubmitDrafts))
+
 	s.mux.Handle("GET /api/submissions", s.authenticated(s.handleSubmissions))
 
 	s.mux.Handle("GET /api/users", s.requireAdmin(s.handleListUsers))

@@ -70,7 +70,8 @@ func TestMemorySubmissions(t *testing.T) {
 	m := NewMemory()
 
 	for i := 0; i < 3; i++ {
-		if _, err := m.CreateSubmission(ctx, Submission{PRNumber: 10 + i, CardID: "y_1", Status: StatusOpen}); err != nil {
+		cards := []SubmissionCard{{Kind: "yojo", CardID: "y_1"}}
+		if _, err := m.CreateSubmission(ctx, Submission{PRNumber: 10 + i, Cards: cards, Status: StatusOpen}); err != nil {
 			t.Fatalf("CreateSubmission: %v", err)
 		}
 	}
@@ -104,6 +105,55 @@ func TestMemorySubmissions(t *testing.T) {
 	// A pull request opened by hand has no audit row.
 	if err := m.UpdateSubmissionStatusByPR(ctx, 999, StatusMerged); !errors.Is(err, ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestMemoryDrafts(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+
+	a, err := m.CreateDraft(ctx, Draft{DiscordID: "1", Kind: "yojo", Name: "かがり", Fruit: "strawberry"})
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	if a.ID == 0 || a.CreatedAt.IsZero() {
+		t.Errorf("draft not stamped: %+v", a)
+	}
+	b, err := m.CreateDraft(ctx, Draft{DiscordID: "1", Kind: "sweet", Name: "プリン", Fruit: "all"})
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	if _, err := m.CreateDraft(ctx, Draft{DiscordID: "2", Kind: "yojo", Name: "他人のカード", Fruit: "all"}); err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+
+	mine, err := m.ListDraftsByUser(ctx, "1")
+	if err != nil {
+		t.Fatalf("ListDraftsByUser: %v", err)
+	}
+	if len(mine) != 2 || mine[0].ID != a.ID || mine[1].ID != b.ID {
+		t.Fatalf("ListDraftsByUser(1) = %+v, want [a, b] in creation order", mine)
+	}
+
+	got, err := m.GetDraft(ctx, a.ID)
+	if err != nil || got.Name != "かがり" {
+		t.Errorf("GetDraft = (%+v, %v)", got, err)
+	}
+	if _, err := m.GetDraft(ctx, 99999); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetDraft(missing) = %v, want ErrNotFound", err)
+	}
+
+	if err := m.DeleteDrafts(ctx, []int64{a.ID, 99999}); err != nil {
+		t.Fatalf("DeleteDrafts: %v", err)
+	}
+	remaining, _ := m.ListDraftsByUser(ctx, "1")
+	if len(remaining) != 1 || remaining[0].ID != b.ID {
+		t.Errorf("remaining drafts = %+v, want only b", remaining)
+	}
+
+	other, _ := m.ListDraftsByUser(ctx, "2")
+	if len(other) != 1 {
+		t.Errorf("another user's drafts were affected: %+v", other)
 	}
 }
 

@@ -1,9 +1,12 @@
 import type {
   CardFormValues,
   CardsResponse,
+  Draft,
+  DraftsResponse,
   Me,
   Metadata,
   SubmissionsResponse,
+  SubmitDraftsRequest,
   SubmitPayload,
   SubmitResult,
   UsersResponse,
@@ -61,13 +64,26 @@ export const api = {
   deleteUser: (discordId: string) =>
     request<{ status: string }>(`/api/users/${encodeURIComponent(discordId)}`, { method: 'DELETE' }),
 
-  submit: (values: CardFormValues, image: File | null) => {
+  drafts: () => request<DraftsResponse>('/api/drafts'),
+
+  createDraft: (values: CardFormValues, image: File | null) => {
     const form = new FormData();
     form.append('payload', JSON.stringify(toPayload(values)));
     if (image) {
       form.append('image', image);
     }
-    return request<SubmitResult>('/api/submissions', { method: 'POST', body: form });
+    return request<Draft>('/api/drafts', { method: 'POST', body: form });
+  },
+
+  deleteDraft: (id: number) => request<{ status: string }>(`/api/drafts/${id}`, { method: 'DELETE' }),
+
+  submitDrafts: (ids?: number[]) => {
+    const body: SubmitDraftsRequest = ids && ids.length > 0 ? { ids } : {};
+    return request<SubmitResult>('/api/drafts/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
   },
 };
 

@@ -20,7 +20,7 @@ beforeEach(() => {
   document.cookie = 'pplale_cms_csrf=token-value';
 });
 
-function renderForm(kind: Parameters<typeof emptyValues>[0] = 'yojo', onSubmitted = vi.fn()) {
+function renderForm(kind: Parameters<typeof emptyValues>[0] = 'yojo', onQueued = vi.fn()) {
   const values = emptyValues(kind);
   render(
     <CardForm
@@ -29,10 +29,10 @@ function renderForm(kind: Parameters<typeof emptyValues>[0] = 'yojo', onSubmitte
       nextId="y_42"
       values={{ ...values, name: 'テストカード', imageSlug: 'test_card' }}
       onChange={vi.fn()}
-      onSubmitted={onSubmitted}
+      onQueued={onQueued}
     />,
   );
-  return onSubmitted;
+  return onQueued;
 }
 
 describe('CardForm', () => {
@@ -53,19 +53,20 @@ describe('CardForm', () => {
     expect(screen.queryByLabelText(/役職/)).toBeNull();
   });
 
-  it('submits with the CSRF header and reports the created pull request', async () => {
+  it('queues a draft with the CSRF header instead of opening a PR directly', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 201,
-      text: async () => JSON.stringify({ cardId: 'y_42', prNumber: 7, prUrl: 'https://example/pull/7', files: [] }),
+      text: async () =>
+        JSON.stringify({ id: 1, kind: 'yojo', cardId: '', isEdit: false, name: 'テストカード', imageDisplayUrl: '/api/drafts/1/image', hasNewImage: true }),
     });
-    const onSubmitted = renderForm();
+    const onQueued = renderForm();
 
-    await userEvent.click(screen.getByRole('button', { name: /PR を作成する/ }));
+    await userEvent.click(screen.getByRole('button', { name: /下書きに追加/ }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const [path, init] = fetchMock.mock.calls[0];
-    expect(path).toBe('/api/submissions');
+    expect(path).toBe('/api/drafts');
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('same-origin');
     expect(init.headers.get('X-CSRF-Token')).toBe('token-value');
@@ -73,7 +74,7 @@ describe('CardForm', () => {
     const payload = JSON.parse((init.body as FormData).get('payload') as string);
     expect(payload).toMatchObject({ kind: 'yojo', name: 'テストカード', imageSlug: 'test_card' });
 
-    await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith(expect.objectContaining({ cardId: 'y_42' })));
+    await waitFor(() => expect(onQueued).toHaveBeenCalledWith(expect.objectContaining({ name: 'テストカード' })));
   });
 
   it('surfaces per-field validation errors from the server', async () => {
@@ -85,7 +86,7 @@ describe('CardForm', () => {
     });
     renderForm();
 
-    await userEvent.click(screen.getByRole('button', { name: /PR を作成する/ }));
+    await userEvent.click(screen.getByRole('button', { name: /下書きに追加/ }));
 
     await waitFor(() => expect(screen.getByText('カード名は必須です')).toBeTruthy());
     expect(screen.getByText('入力内容を確認してください')).toBeTruthy();

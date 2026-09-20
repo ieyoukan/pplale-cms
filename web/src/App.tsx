@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiError, api } from './api';
 import { CardForm, emptyValues, fromCard } from './components/CardForm';
 import { CardList } from './components/CardList';
+import { DraftQueue } from './components/DraftQueue';
 import { Submissions } from './components/Submissions';
 import { Users } from './components/Users';
-import type { Card, CardFormValues, Kind, Me, Metadata, Submission, SubmitResult, User } from './types';
+import type { Card, CardFormValues, Draft, Kind, Me, Metadata, Submission, SubmitResult, User } from './types';
 
 type Tab = 'cards' | 'history' | 'users';
 
@@ -17,6 +18,7 @@ export function App() {
   const [nextId, setNextId] = useState('');
   const [values, setValues] = useState<CardFormValues>(emptyValues('yojo'));
   const [editingCard, setEditingCard] = useState<Card | null>(null);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [tab, setTab] = useState<Tab>('cards');
@@ -40,23 +42,29 @@ export function App() {
     api.metadata().then(setMetadata).catch((err) => setError(String(err)));
   }, [me]);
 
-  const loadCards = useCallback(
-    (target: Kind) => {
-      api
-        .cards(target)
-        .then((data) => {
-          setCards(data.cards);
-          setNextId(data.nextId);
-        })
-        .catch((err) => setError(String(err)));
-    },
-    [],
-  );
+  const loadCards = useCallback((target: Kind) => {
+    api
+      .cards(target)
+      .then((data) => {
+        setCards(data.cards);
+        setNextId(data.nextId);
+      })
+      .catch((err) => setError(String(err)));
+  }, []);
 
   useEffect(() => {
     if (!me) return;
     loadCards(kind);
   }, [me, kind, loadCards]);
+
+  const loadDrafts = useCallback(() => {
+    api.drafts().then((d) => setDrafts(d.drafts ?? [])).catch((err) => setError(String(err)));
+  }, []);
+
+  useEffect(() => {
+    if (!me || !me.canSubmit) return;
+    loadDrafts();
+  }, [me, loadDrafts]);
 
   const loadSubmissions = useCallback(() => {
     api.submissions().then((d) => setSubmissions(d.submissions ?? [])).catch((err) => setError(String(err)));
@@ -128,8 +136,14 @@ export function App() {
         <p className="success">
           PR を作成しました:{' '}
           <a href={banner.prUrl} target="_blank" rel="noreferrer">
-            #{banner.prNumber} ({banner.cardId})
+            #{banner.prNumber}
           </a>
+          {banner.submission && (
+            <>
+              {' '}
+              ({banner.submission.cards.map((c) => c.cardName).join(' / ')})
+            </>
+          )}
           <br />
           <small>{banner.files.join(' / ')}</small>
         </p>
@@ -163,7 +177,7 @@ export function App() {
                 setEditingCard(card);
               }}
             />
-            <div>
+            <div className="editor-column">
               {values.id && (
                 <button
                   type="button"
@@ -184,13 +198,25 @@ export function App() {
                   values={values}
                   currentImageUrl={editingCard?.imageDisplayUrl}
                   onChange={setValues}
-                  onSubmitted={(result) => {
-                    setBanner(result);
+                  onQueued={() => {
                     setValues(emptyValues(kind));
                     setEditingCard(null);
-                    loadCards(kind);
+                    loadDrafts();
                   }}
                 />
+              )}
+              {me.canSubmit && (
+                <section className="drafts-section">
+                  <h2>下書き{drafts.length > 0 ? `（${drafts.length}）` : ''}</h2>
+                  <DraftQueue
+                    drafts={drafts}
+                    onChanged={loadDrafts}
+                    onSubmitted={(result) => {
+                      setBanner(result);
+                      loadCards(kind);
+                    }}
+                  />
+                </section>
               )}
             </div>
           </div>

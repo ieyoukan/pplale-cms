@@ -1,11 +1,14 @@
-// Package publish turns a reviewed CMS submission into a pull request against
-// PPLALE-web. It owns every rule from the data contract that spans more than
-// one concern: ID allocation against live upstream data, the WebP plus OGP PNG
-// pair, branch naming and the audit trail carried in the commit message.
+// Package publish turns a batch of reviewed CMS drafts into a single pull
+// request against PPLALE-web. It owns every rule from the data contract that
+// spans more than one concern: ID allocation against live upstream data, the
+// WebP plus OGP PNG pair, branch naming and the audit trail carried in the
+// commit message.
 package publish
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -22,33 +25,45 @@ type RepoClient interface {
 	CreatePullRequest(ctx context.Context, in ghapp.PullRequestInput) (ghapp.PullRequest, error)
 }
 
-// Submitter is the authenticated Discord identity behind a submission. It is
+// Submitter is the authenticated Discord identity behind a batch. It is
 // recorded in the commit message so a merged card can always be traced back.
+// A batch always belongs to a single submitter: each creator submits their
+// own queued drafts.
 type Submitter struct {
 	DiscordID   string
 	DiscordName string
 }
 
-// Submission is one card addition or edit.
-type Submission struct {
+// Item is one card addition or edit going into the batch. Images are
+// converted to WebP/OGP-PNG when a draft is created, not here: PublishBatch
+// only ever writes bytes it is handed, so a batch commits instantly no matter
+// how many images it carries.
+type Item struct {
 	Kind cards.Kind
 	Card cards.Card
 	// ImageSlug is the base file name (without extension) for a new image.
-	// Ignored when ImageSource is empty.
+	// Ignored when Image is nil.
 	ImageSlug string
-	// ImageSource is the raw upload. Empty means "keep the existing image",
-	// which is only valid when editing a card that already has one.
-	ImageSource []byte
-	Submitter   Submitter
+	// Image is the already-converted pair to write. Nil means "keep the
+	// existing image", which is only valid when editing a card that already
+	// has one.
+	Image *imageconv.Result
+}
+
+// CardResult reports what happened to one item in the batch.
+type CardResult struct {
+	Kind     cards.Kind
+	CardID   string
+	CardName string
+	IsEdit   bool
 }
 
 // Result reports what was opened upstream.
 type Result struct {
 	PullRequest ghapp.PullRequest
-	CardID      string
 	Branch      string
 	Files       []string
-	Image       *imageconv.Result
+	Cards       []CardResult
 }
 
 // Publisher creates pull requests. It holds no credentials itself; the repo
@@ -75,106 +90,133 @@ func SanitizeSlug(slug string) (string, error) {
 	return slug, nil
 }
 
-// Publish validates a submission against the current upstream data and opens a
-// pull request. The dataset is always re-read from the base branch so that IDs
-// are allocated against live data rather than a possibly stale CMS copy.
-func (p *Publisher) Publish(ctx context.Context, sub Submission) (Result, error) {
-	ds, err := cards.DatasetFor(sub.Kind)
-	if err != nil {
-		return Result{}, err
+// datasetGroup accumulates every item targeting one dataset file, so the file
+// is read once, appended to in submission order, and written back once.
+type datasetGroup struct {
+	ds   cards.Dataset
+	list []cards.Card
+}
+
+// PublishBatch validates every item against the current upstream data and
+// opens a single pull request containing all of them. Datasets are always
+// re-read from the base branch so that IDs are allocated against live data
+// rather than a possibly stale CMS copy; two items targeting the same dataset
+// in one batch share that read and are appended in order, so they never
+// collide on an allocated ID.
+func (p *Publisher) PublishBatch(ctx context.Context, items []Item, submitter Submitter) (Result, error) {
+	if len(items) == 0 {
+		return Result{}, errors.New("publish: カードが1件もありません")
 	}
-	if sub.Submitter.DiscordID == "" {
+	if submitter.DiscordID == "" {
 		return Result{}, errors.New("publish: 提出者の Discord ID が必要です")
 	}
 
-	raw, err := p.Repo.FileContent(ctx, ds.JSONPath)
-	if err != nil {
-		return Result{}, fmt.Errorf("publish: %s の取得に失敗しました: %w", ds.JSONPath, err)
-	}
-	list, err := cards.Decode(ds, raw)
-	if err != nil {
-		return Result{}, err
-	}
+	groups := make(map[cards.Kind]*datasetGroup)
+	var order []cards.Kind
+	var datasetFiles []ghapp.File
+	var imageFiles []ghapp.File
+	var results []CardResult
+	var images []imageNote
 
-	card := sub.Card
-	card.Type = ds.CardType
+	for _, item := range items {
+		ds, err := cards.DatasetFor(item.Kind)
+		if err != nil {
+			return Result{}, err
+		}
+		g, ok := groups[item.Kind]
+		if !ok {
+			raw, err := p.Repo.FileContent(ctx, ds.JSONPath)
+			if err != nil {
+				return Result{}, fmt.Errorf("publish: %s の取得に失敗しました: %w", ds.JSONPath, err)
+			}
+			list, err := cards.Decode(ds, raw)
+			if err != nil {
+				return Result{}, err
+			}
+			g = &datasetGroup{ds: ds, list: list}
+			groups[item.Kind] = g
+			order = append(order, item.Kind)
+		}
 
-	index := -1
-	if card.ID == "" {
-		card.ID = cards.NextID(ds, list)
-	} else {
-		for i, existing := range list {
-			if existing.ID == card.ID {
-				index = i
-				break
+		card := item.Card
+		card.Type = g.ds.CardType
+
+		index := -1
+		if card.ID == "" {
+			card.ID = cards.NextID(g.ds, g.list)
+		} else {
+			for i, existing := range g.list {
+				if existing.ID == card.ID {
+					index = i
+					break
+				}
+			}
+			if index < 0 {
+				return Result{}, fmt.Errorf("publish: %s に ID %q のカードが存在しません", g.ds.JSONPath, card.ID)
 			}
 		}
-		if index < 0 {
-			return Result{}, fmt.Errorf("publish: %s に ID %q のカードが存在しません", ds.JSONPath, card.ID)
+
+		switch {
+		case item.Image != nil:
+			slug, err := SanitizeSlug(item.ImageSlug)
+			if err != nil {
+				return Result{}, err
+			}
+			card.ImageURL = g.ds.ImageURL(slug + ".webp")
+			imageFiles = append(imageFiles,
+				ghapp.File{Path: g.ds.ImagePath(slug + ".webp"), Content: item.Image.WebP},
+				// 上流CIはこのPNGを検証しないが、欠けるとOGP画像が壊れる。
+				ghapp.File{Path: g.ds.OGImagePath(slug + ".png"), Content: item.Image.OGPNG},
+			)
+			images = append(images, imageNote{CardName: card.Name, Image: *item.Image})
+		case index >= 0:
+			card.ImageURL = g.list[index].ImageURL
+		default:
+			return Result{}, fmt.Errorf("publish: 「%s」: 新規カードには画像が必要です", card.Name)
 		}
+
+		if err := cards.Validate(g.ds, card); err != nil {
+			return Result{}, fmt.Errorf("「%s」: %w", card.Name, err)
+		}
+
+		if index >= 0 {
+			g.list[index] = card
+		} else {
+			g.list = append(g.list, card)
+		}
+
+		results = append(results, CardResult{Kind: item.Kind, CardID: card.ID, CardName: card.Name, IsEdit: index >= 0})
 	}
 
-	var converted *imageconv.Result
-	var files []ghapp.File
-	switch {
-	case len(sub.ImageSource) > 0:
-		slug, err := SanitizeSlug(sub.ImageSlug)
+	for _, kind := range order {
+		g := groups[kind]
+		if err := cards.ValidateDataset(g.ds, g.list); err != nil {
+			return Result{}, err
+		}
+		encoded, err := cards.Encode(g.ds, g.list)
 		if err != nil {
 			return Result{}, err
 		}
-		result, err := imageconv.Convert(sub.ImageSource)
-		if err != nil {
-			return Result{}, err
-		}
-		converted = &result
-		card.ImageURL = ds.ImageURL(slug + ".webp")
-		files = append(files,
-			ghapp.File{Path: ds.ImagePath(slug + ".webp"), Content: result.WebP},
-			// 上流CIはこのPNGを検証しないが、欠けるとOGP画像が壊れる。
-			ghapp.File{Path: ds.OGImagePath(slug + ".png"), Content: result.OGPNG},
-		)
-	case index >= 0:
-		card.ImageURL = list[index].ImageURL
-	default:
-		return Result{}, errors.New("publish: 新規カードには画像が必要です")
+		datasetFiles = append(datasetFiles, ghapp.File{Path: g.ds.JSONPath, Content: encoded})
 	}
 
-	if index >= 0 {
-		list[index] = card
-	} else {
-		list = append(list, card)
-	}
-
-	if err := cards.Validate(ds, card); err != nil {
-		return Result{}, err
-	}
-	if err := cards.ValidateDataset(ds, list); err != nil {
-		return Result{}, err
-	}
-
-	encoded, err := cards.Encode(ds, list)
-	if err != nil {
-		return Result{}, err
-	}
-	files = append([]ghapp.File{{Path: ds.JSONPath, Content: encoded}}, files...)
-
+	files := append(datasetFiles, imageFiles...)
 	paths := make([]string, len(files))
 	for i, f := range files {
 		paths[i] = f.Path
 	}
 
-	action := "追加"
-	if index >= 0 {
-		action = "更新"
+	branch, err := branchName(results)
+	if err != nil {
+		return Result{}, err
 	}
-	branch := fmt.Sprintf("cms/%s-%s", ds.Kind, card.ID)
-	title := fmt.Sprintf("feat: %sカード「%s」を%s", datasetLabel(ds.Kind), card.Name, action)
-	commit := fmt.Sprintf("%s (submitted by discord:%s)", title, sub.Submitter.DiscordID)
+	title := buildTitle(results)
+	commit := fmt.Sprintf("%s (submitted by discord:%s)", title, submitter.DiscordID)
 
 	pr, err := p.Repo.CreatePullRequest(ctx, ghapp.PullRequestInput{
 		Branch:        branch,
 		Title:         title,
-		Body:          buildBody(ds, card, sub, paths, converted, index >= 0),
+		Body:          buildBody(results, paths, images, submitter),
 		CommitMessage: commit,
 		Files:         files,
 	})
@@ -182,7 +224,49 @@ func (p *Publisher) Publish(ctx context.Context, sub Submission) (Result, error)
 		return Result{}, err
 	}
 
-	return Result{PullRequest: pr, CardID: card.ID, Branch: branch, Files: paths, Image: converted}, nil
+	return Result{PullRequest: pr, Branch: branch, Files: paths, Cards: results}, nil
+}
+
+type imageNote struct {
+	CardName string
+	Image    imageconv.Result
+}
+
+// branchName keeps the readable cms/<kind>-<id> form for the common single
+// card case; a batch of several cards has no single natural name, so it gets
+// a short random suffix instead.
+func branchName(results []CardResult) (string, error) {
+	if len(results) == 1 {
+		return fmt.Sprintf("cms/%s-%s", results[0].Kind, results[0].CardID), nil
+	}
+	token, err := randomHex(4)
+	if err != nil {
+		return "", err
+	}
+	return "cms/batch-" + token, nil
+}
+
+func randomHex(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("publish: ブランチ名の生成に失敗しました: %w", err)
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func buildTitle(results []CardResult) string {
+	if len(results) == 1 {
+		r := results[0]
+		return fmt.Sprintf("feat: %sカード「%s」を%s", datasetLabel(r.Kind), r.CardName, actionLabel(r.IsEdit))
+	}
+	return fmt.Sprintf("feat: カードを%d件まとめて追加・更新", len(results))
+}
+
+func actionLabel(isEdit bool) string {
+	if isEdit {
+		return "更新"
+	}
+	return "追加"
 }
 
 func datasetLabel(kind cards.Kind) string {
@@ -200,12 +284,15 @@ func datasetLabel(kind cards.Kind) string {
 	}
 }
 
-func buildBody(ds cards.Dataset, card cards.Card, sub Submission, paths []string, img *imageconv.Result, isEdit bool) string {
+func buildBody(results []CardResult, paths []string, images []imageNote, submitter Submitter) string {
 	var b strings.Builder
 	b.WriteString("pplale-cms から自動生成された PR です。\n\n")
 
-	fmt.Fprintf(&b, "## カード\n\n- ID: `%s`\n- 名前: %s\n- データセット: `%s`\n- 画像: `%s`\n\n",
-		card.ID, card.Name, ds.JSONPath, card.ImageURL)
+	b.WriteString("## カード\n\n")
+	for _, r := range results {
+		fmt.Fprintf(&b, "- `%s` %s（%s / %s）\n", r.CardID, r.CardName, datasetLabel(r.Kind), actionLabel(r.IsEdit))
+	}
+	b.WriteString("\n")
 
 	b.WriteString("## 変更ファイル\n\n")
 	for _, p := range paths {
@@ -213,18 +300,29 @@ func buildBody(ds cards.Dataset, card cards.Card, sub Submission, paths []string
 	}
 	b.WriteString("\n")
 
-	if img != nil {
-		fmt.Fprintf(&b, "## 画像変換\n\n- 変換前: %s %s\n- WebP (幅%dpx, quality %d): %s\n- OGP用 PNG (幅%dpx): %s\n\n",
-			strings.ToUpper(img.SourceType), humanBytes(img.SourceBytes),
-			imageconv.CardWidth, imageconv.Quality, humanBytes(len(img.WebP)),
-			imageconv.OGWidth, humanBytes(len(img.OGPNG)))
+	if len(images) > 0 {
+		b.WriteString("## 画像変換\n\n")
+		for _, img := range images {
+			fmt.Fprintf(&b, "- %s: 変換前 %s %s → WebP (幅%dpx, quality %d) %s / OGP用 PNG (幅%dpx) %s\n",
+				img.CardName, strings.ToUpper(img.Image.SourceType), humanBytes(img.Image.SourceBytes),
+				imageconv.CardWidth, imageconv.Quality, humanBytes(len(img.Image.WebP)),
+				imageconv.OGWidth, humanBytes(len(img.Image.OGPNG)))
+		}
+		b.WriteString("\n")
 	}
 
-	fmt.Fprintf(&b, "## 提出者\n\n- Discord: %s (`%s`)\n\n", sub.Submitter.DiscordName, sub.Submitter.DiscordID)
+	fmt.Fprintf(&b, "## 提出者\n\n- Discord: %s (`%s`)\n\n", submitter.DiscordName, submitter.DiscordID)
 
-	if !isEdit {
+	hasNew := false
+	for _, r := range results {
+		if !r.IsEdit {
+			hasNew = true
+			break
+		}
+	}
+	if hasNew {
 		b.WriteString("## 注意\n\n")
-		b.WriteString("- 新規カードのため、英語版データ (`src/data/en/*.json`) の追従が必要です。")
+		b.WriteString("- 新規カードを含むため、英語版データ (`src/data/en/*.json`) の追従が必要です。")
 		b.WriteString("`npm run cards:import-en` は日本語版と同じ件数の英語 CSV が揃うまで失敗します。\n")
 	}
 	return b.String()
