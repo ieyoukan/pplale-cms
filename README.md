@@ -31,7 +31,7 @@ PPLALE-web と同じ運用。
 
 ```bash
 mise install          # go, node, helm を揃える
-cp .env.local.example .env.local   # 秘密情報を記入（mise が自動で読み込む）
+cp .env.example .env  # 秘密情報を記入（mise が自動で読み込む）
 mise run install      # go mod download + npm ci
 
 mise run dev          # API サーバー (:8080)
@@ -88,7 +88,7 @@ PPLALE-web が手元に無いときテストは skip されるが、`contract-ch
 PPLALE-web に新しいフィールドが増えた場合、CMS は黙って捨てずにその場でエラーになる。
 
 開発用の非機密な既定値 (`BASE_URL`, `ALLOW_INSECURE_COOKIES` など) は `mise.toml` の
-`[env]` に入っている。秘密情報は `.env.local` にのみ置き、commit しない。
+`[env]` に入っている。秘密情報は `.env` にのみ置き、commit しない。
 `DATABASE_URL` 未設定ならインメモリ（再起動で消える）。
 
 ## GitHub App の設定

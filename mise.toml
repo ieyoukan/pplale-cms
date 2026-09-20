@@ -5,9 +5,9 @@ helm = "latest"
 "go:github.com/gzuidhof/tygo" = "latest"
 
 [env]
-_.file = { path = ".env.local", redact = true }
+_.file = { path = ".env", redact = true }
 _.path = ["./web/node_modules/.bin"]
-# 開発用の既定値。秘密情報は .env.local に置く（.gitignore 済み / .env.local.example を参照）
+# 開発用の既定値。秘密情報は .env に置く（.gitignore 済み / .env.example を参照）
 ADDR = ":8080"
 BASE_URL = "http://localhost:8080"
 ALLOW_INSECURE_COOKIES = "true"
