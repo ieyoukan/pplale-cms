@@ -60,6 +60,10 @@ func (f *fakeRepo) CreatePullRequest(_ context.Context, in ghapp.PullRequestInpu
 	return ghapp.PullRequest{Number: 100 + len(f.created), HTMLURL: "https://github.com/ieyoukan/PPLALE-web/pull/101"}, nil
 }
 
+func (f *fakeRepo) RawURL(path string) string {
+	return "https://raw.githubusercontent.com/ieyoukan/PPLALE-web/main/" + path
+}
+
 type harness struct {
 	server *Server
 	store  *store.Memory
@@ -171,6 +175,35 @@ func TestLoggedInButNotOnAllowListCannotSubmit(t *testing.T) {
 	}
 	if len(h.repo.created) != 0 {
 		t.Error("a pull request was opened for a user who is not on the allow list")
+	}
+}
+
+// The browser cannot reach a file inside a GitHub repository just from the
+// site-relative imageUrl PPLALE-web stores, so /api/cards must also hand back
+// a fetchable URL for it.
+func TestCardsIncludeAFetchableImageURL(t *testing.T) {
+	h := newHarness(t)
+	authenticate := h.login(t, "100000000000000020", "viewer", store.RoleCreator)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/cards?kind=yojo", nil)
+	authenticate(req)
+	rec := h.do(req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/cards = %d: %s", rec.Code, rec.Body)
+	}
+
+	var resp api.CardsResponse
+	decode(t, rec, &resp)
+	if len(resp.Cards) != 1 {
+		t.Fatalf("got %d cards, want 1", len(resp.Cards))
+	}
+	card := resp.Cards[0]
+	if card.ImageURL != "/images/yojo/kagari.webp" {
+		t.Errorf("ImageURL = %q", card.ImageURL)
+	}
+	want := "https://raw.githubusercontent.com/ieyoukan/PPLALE-web/main/public/images/yojo/kagari.webp"
+	if card.ImageDisplayURL != want {
+		t.Errorf("ImageDisplayURL = %q, want %q", card.ImageDisplayURL, want)
 	}
 }
 

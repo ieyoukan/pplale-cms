@@ -154,7 +154,9 @@ func (s *Server) handleCards(w http.ResponseWriter, r *http.Request) {
 	for i, c := range list {
 		out[i] = api.Card{
 			ID: c.ID, Name: c.Name, Type: string(c.Type), Fruit: string(c.Fruit),
-			Description: c.Description, ImageURL: c.ImageURL, Cost: c.Cost, HP: c.HP, Attack: c.Attack,
+			Description: c.Description, ImageURL: c.ImageURL,
+			ImageDisplayURL: s.deps.CardReader.RawURL(cards.RepoImagePath(c.ImageURL)),
+			Cost:            c.Cost, HP: c.HP, Attack: c.Attack,
 			Effect: c.Effect, Role: stringPtr(c.Role), SweetType: stringPtr(c.SweetType), Version: stringPtr(c.Version),
 		}
 	}

@@ -174,4 +174,13 @@ func (d Dataset) ImageURL(fileName string) string {
 	return "/images/" + d.ImageDir + "/" + fileName
 }
 
+// RepoImagePath converts a card's `imageUrl` field (e.g. "/images/yojo/x.webp",
+// the site-relative form PPLALE-web's Next.js app serves) into the path of
+// that file inside the repository (e.g. "public/images/yojo/x.webp"). It does
+// not validate the input; callers that accept imageUrl from outside this
+// package should run it through Validate first.
+func RepoImagePath(imageURL string) string {
+	return "public" + imageURL
+}
+
 func ptr[T any](v T) *T { return &v }

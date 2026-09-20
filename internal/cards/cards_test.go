@@ -256,6 +256,17 @@ func TestDatasetPaths(t *testing.T) {
 	}
 }
 
+func TestRepoImagePath(t *testing.T) {
+	// This round-trips through ImagePath/ImageURL on purpose: the way a raw
+	// imageUrl field gets turned back into a repository path must stay in
+	// sync with how ImagePath builds it in the first place.
+	ds := datasetFor(t, KindYojo)
+	fileName := "111イチゴかがり.webp"
+	if got, want := RepoImagePath(ds.ImageURL(fileName)), ds.ImagePath(fileName); got != want {
+		t.Errorf("RepoImagePath(ds.ImageURL(%q)) = %q, want %q", fileName, got, want)
+	}
+}
+
 func datasetFor(t *testing.T, kind Kind) Dataset {
 	t.Helper()
 	ds, err := DatasetFor(kind)

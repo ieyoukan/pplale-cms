@@ -80,7 +80,16 @@ export interface Card {
   type: string;
   fruit: string;
   description: string;
+  /**
+   * ImageURL is the site-relative path PPLALE-web stores (e.g.
+   * "/images/yojo/x.webp"). It is not directly fetchable by the browser.
+   */
   imageUrl: string;
+  /**
+   * ImageDisplayURL is a full https:// URL the browser can put straight
+   * into an <img src>, pointing at the file on PPLALE-web's base branch.
+   */
+  imageDisplayUrl: string;
   cost: number /* int */;
   hp: number /* int */;
   attack: number /* int */;

@@ -16,6 +16,7 @@ export function App() {
   const [cards, setCards] = useState<Card[]>([]);
   const [nextId, setNextId] = useState('');
   const [values, setValues] = useState<CardFormValues>(emptyValues('yojo'));
+  const [editingCard, setEditingCard] = useState<Card | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [tab, setTab] = useState<Tab>('cards');
@@ -146,6 +147,7 @@ export function App() {
                   const next = ds.kind as Kind;
                   setKind(next);
                   setValues(emptyValues(next));
+                  setEditingCard(null);
                 }}
               >
                 {ds.label}
@@ -154,10 +156,23 @@ export function App() {
           </nav>
 
           <div className="columns">
-            <CardList cards={cards} onEdit={(card) => setValues(fromCard(kind, card))} />
+            <CardList
+              cards={cards}
+              onEdit={(card) => {
+                setValues(fromCard(kind, card));
+                setEditingCard(card);
+              }}
+            />
             <div>
               {values.id && (
-                <button type="button" className="new-card" onClick={() => setValues(emptyValues(kind))}>
+                <button
+                  type="button"
+                  className="new-card"
+                  onClick={() => {
+                    setValues(emptyValues(kind));
+                    setEditingCard(null);
+                  }}
+                >
                   新規カードに切り替える
                 </button>
               )}
@@ -167,10 +182,12 @@ export function App() {
                   kind={kind}
                   nextId={nextId}
                   values={values}
+                  currentImageUrl={editingCard?.imageDisplayUrl}
                   onChange={setValues}
                   onSubmitted={(result) => {
                     setBanner(result);
                     setValues(emptyValues(kind));
+                    setEditingCard(null);
                     loadCards(kind);
                   }}
                 />

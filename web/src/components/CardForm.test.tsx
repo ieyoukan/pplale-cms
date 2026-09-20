@@ -101,6 +101,7 @@ describe('fromCard', () => {
       fruit: 'strawberry',
       description: '',
       imageUrl: '/images/yojo/tokoko.webp',
+      imageDisplayUrl: 'https://raw.githubusercontent.com/ieyoukan/PPLALE-web/main/public/images/yojo/tokoko.webp',
       cost: 1,
       hp: 2,
       attack: 3,

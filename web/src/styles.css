@@ -101,10 +101,11 @@ h1 {
 .card-list li button {
   width: 100%;
   display: grid;
-  grid-template-columns: 4rem 1fr auto;
+  grid-template-columns: 2.25rem 4rem 1fr auto;
+  align-items: center;
   gap: 8px;
   text-align: left;
-  padding: 8px 12px;
+  padding: 6px 12px;
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--border);
@@ -114,6 +115,16 @@ h1 {
 
 .card-list li button:hover {
   background: var(--bg-soft);
+}
+
+.card-thumb {
+  width: 2.25rem;
+  height: 2.25rem;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--bg-soft);
+  /* 読み込み失敗時は枠だけ残して崩れないようにする */
+  color: transparent;
 }
 
 .card-id {

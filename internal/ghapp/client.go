@@ -23,6 +23,31 @@ type Client struct {
 	BaseBranch string
 	API        *API
 	Tokens     TokenProvider
+
+	// RawHost serves raw file bytes for a public repository without
+	// authentication (used to hand the browser a direct <img src>). Defaults
+	// to raw.githubusercontent.com; overridable for tests.
+	RawHost string
+}
+
+// DefaultRawHost is GitHub's public raw content host.
+const DefaultRawHost = "raw.githubusercontent.com"
+
+// RawURL builds a browser-fetchable URL for a file on the base branch. It only
+// makes sense for a public repository: there is no authentication involved,
+// which is exactly why it can be embedded directly in an <img> tag instead of
+// proxied through the CMS server.
+func (c *Client) RawURL(path string) string {
+	host := c.RawHost
+	if host == "" {
+		host = DefaultRawHost
+	}
+	u := url.URL{
+		Scheme: "https",
+		Host:   host,
+		Path:   "/" + c.Owner + "/" + c.Repo + "/" + c.BaseBranch + "/" + path,
+	}
+	return u.String()
 }
 
 // File is one file written by a pull request.

@@ -72,19 +72,24 @@ type Me struct {
 // Card is one card as the editor sees it. Optional fields are null when the
 // dataset does not carry them.
 type Card struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Type        string  `json:"type"`
-	Fruit       string  `json:"fruit"`
-	Description string  `json:"description"`
-	ImageURL    string  `json:"imageUrl"`
-	Cost        int     `json:"cost"`
-	HP          int     `json:"hp"`
-	Attack      int     `json:"attack"`
-	Effect      *string `json:"effect,omitempty"`
-	Role        *string `json:"role,omitempty"`
-	SweetType   *string `json:"sweetType,omitempty"`
-	Version     *string `json:"version,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Fruit       string `json:"fruit"`
+	Description string `json:"description"`
+	// ImageURL is the site-relative path PPLALE-web stores (e.g.
+	// "/images/yojo/x.webp"). It is not directly fetchable by the browser.
+	ImageURL string `json:"imageUrl"`
+	// ImageDisplayURL is a full https:// URL the browser can put straight
+	// into an <img src>, pointing at the file on PPLALE-web's base branch.
+	ImageDisplayURL string  `json:"imageDisplayUrl"`
+	Cost            int     `json:"cost"`
+	HP              int     `json:"hp"`
+	Attack          int     `json:"attack"`
+	Effect          *string `json:"effect,omitempty"`
+	Role            *string `json:"role,omitempty"`
+	SweetType       *string `json:"sweetType,omitempty"`
+	Version         *string `json:"version,omitempty"`
 }
 
 // CardsResponse is the live content of one dataset file on the base branch.

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -350,6 +351,25 @@ func TestEncodePathEscapesJapaneseFilenames(t *testing.T) {
 	}
 	if !strings.HasPrefix(got, "public/images/yojo/") {
 		t.Errorf("encodePath escaped the separators: %q", got)
+	}
+}
+
+func TestRawURL(t *testing.T) {
+	c := testClient("http://127.0.0.1:0")
+
+	got := c.RawURL("public/images/yojo/111イチゴかがり.webp")
+	want := "https://raw.githubusercontent.com/ieyoukan/PPLALE-web/main/public/images/yojo/" +
+		"111%E3%82%A4%E3%83%81%E3%82%B4%E3%81%8B%E3%81%8C%E3%82%8A.webp"
+	if got != want {
+		t.Errorf("RawURL = %q, want %q", got, want)
+	}
+	if parsed, err := url.Parse(got); err != nil || parsed.Scheme != "https" {
+		t.Errorf("RawURL produced an unparseable URL: %q (%v)", got, err)
+	}
+
+	c.RawHost = "raw.example.internal"
+	if got := c.RawURL("public/a.webp"); got != "https://raw.example.internal/ieyoukan/PPLALE-web/main/public/a.webp" {
+		t.Errorf("RawURL with a custom host = %q", got)
 	}
 }
 

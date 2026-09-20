@@ -32,6 +32,7 @@ export function CardList({ cards, onEdit }: Props) {
         {filtered.map((card) => (
           <li key={card.id}>
             <button type="button" onClick={() => onEdit(card)}>
+              <img className="card-thumb" src={card.imageDisplayUrl} alt="" loading="lazy" />
               <span className="card-id">{card.id}</span>
               <span className="card-name">{card.name}</span>
               <span className="card-stats">

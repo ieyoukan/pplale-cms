@@ -17,9 +17,11 @@ import (
 	"github.com/ieyoukan/pplale-cms/internal/store"
 )
 
-// CardReader reads the current dataset files from the upstream repository.
+// CardReader reads the current dataset files from the upstream repository and
+// builds browser-fetchable URLs for the images those files reference.
 type CardReader interface {
 	FileContent(ctx context.Context, path string) ([]byte, error)
+	RawURL(path string) string
 }
 
 // Deps are the collaborators the HTTP layer needs.
@@ -116,7 +118,7 @@ func securityHeaders(w http.ResponseWriter) {
 	h.Set("Referrer-Policy", "same-origin")
 	h.Set("Cross-Origin-Opener-Policy", "same-origin")
 	h.Set("Content-Security-Policy",
-		"default-src 'self'; img-src 'self' data: https://cdn.discordapp.com; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		"default-src 'self'; img-src 'self' data: https://cdn.discordapp.com https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

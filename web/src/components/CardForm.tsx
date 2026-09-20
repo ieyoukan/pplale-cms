@@ -72,11 +72,13 @@ interface Props {
   kind: Kind;
   nextId: string;
   values: CardFormValues;
+  /** 編集中カードの現在の画像。新規アップロードを選ぶまではこれを表示する。 */
+  currentImageUrl?: string;
   onChange: (values: CardFormValues) => void;
   onSubmitted: (result: SubmitResult) => void;
 }
 
-export function CardForm({ metadata, kind, nextId, values, onChange, onSubmitted }: Props) {
+export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onChange, onSubmitted }: Props) {
   const [image, setImage] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -220,7 +222,12 @@ export function CardForm({ metadata, kind, nextId, values, onChange, onSubmitted
           <FieldError message={fieldErrors.imageUrl} />
         </label>
         {preview && <img className="preview" src={preview} alt="アップロード画像のプレビュー" />}
-        {isEdit && !image && <p className="hint">画像を選ばない場合は既存の画像がそのまま使われます。</p>}
+        {!preview && isEdit && currentImageUrl && (
+          <>
+            <img className="preview" src={currentImageUrl} alt="現在の画像" />
+            <p className="hint">画像を選ばない場合は現在の画像がそのまま使われます。</p>
+          </>
+        )}
       </fieldset>
 
       {error && <p className="error">{error}</p>}
