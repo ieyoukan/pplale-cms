@@ -60,6 +60,23 @@ secrets:
 
 postgresql:
   enabled: true
+  # Bitnami は2025年に配布方式を変更し、バージョン固定タグ(例: 17.6.0-debian-12-r4)を
+  # docker.io/bitnami/* から docker.io/bitnamilegacy/* (凍結版・以後更新なし) へ移した。
+  # docker.io/bitnami/* には現在 latest タグしか残っていないため、固定タグを使う
+  # このチャートは bitnamilegacy を明示的に指定しないと ImagePullBackOff になる。
+  # 恒久対応としては、自前の postgres:17-alpine ベースの StatefulSet や、
+  # CloudNativePG など他のメンテナンスされている選択肢への切り替えを検討したい。
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+  volumePermissions:
+    image:
+      registry: docker.io
+      repository: bitnamilegacy/os-shell
+  metrics:
+    image:
+      registry: docker.io
+      repository: bitnamilegacy/postgres-exporter
   auth:
     username: pplale
     password: change-me
