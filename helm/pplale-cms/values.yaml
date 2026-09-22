@@ -2,13 +2,15 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/ieyoukan/pplale-cms
-  # docker-publish.yml は main への push のたびに latest と sha-<short> タグを
-  # 作る。v*.*.* のセマンティックタグは git タグを打ったときだけ作られるため、
-  # ここを Chart.AppVersion に頼ると（CIが打っていないタグなので）存在しない
-  # イメージを参照して ImagePullBackOff になる。運用が git タグを打つ体制に
-  # なるまでは latest をデフォルトにしておく。
-  tag: "latest"
-  pullPolicy: Always
+  # 実際にどのタグをデプロイするかは ArgoCD Image Updater が決める
+  # (update-strategy: semver, write-back で Application の helm.parameters の
+  # image.tag を書き換える)。docker-publish.yml は main への push のたびに
+  # コミットメッセージ(feat:/fix:等)からセマンティックバージョンを自動採番して
+  # <major>.<minor>.<patch> 形式のタグを push するので、Image Updater の
+  # allow-tags 正規表現 ^[0-9]+\.[0-9]+\.[0-9]+$ とここが噛み合う。
+  # ここは ArgoCD 管理下にない手動 helm install 時のフォールバックに過ぎない。
+  tag: ""
+  pullPolicy: IfNotPresent
 
 imagePullSecrets: []
 

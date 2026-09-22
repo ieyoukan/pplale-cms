@@ -133,13 +133,34 @@ DEV_SKIP_AUTH=true
 
 ## デプロイ
 
-コンテナイメージは `main` への push / `v*.*.*` タグで GitHub Actions
-(`.github/workflows/docker-publish.yml`) が自動で `ghcr.io/ieyoukan/pplale-cms` に
-push する（`latest` と git sha タグ、セマンティックタグ）。追加のシークレット設定は不要
-（`GITHUB_TOKEN` の `packages: write` 権限のみで動く）。**初回だけ**、GitHub の
-Package 設定でこのパッケージの公開範囲を確認しておくこと（デフォルトは repo の可視性を
-継承するが、明示的に Public にしないと Helm 側の `imagePullSecrets` なし運用では pull
-できない場合がある）。
+### イメージの自動バージョニング
+
+`main` への push のたびに GitHub Actions (`.github/workflows/docker-publish.yml`) が
+コミットメッセージ(`feat:`/`fix:`/...)からセマンティックバージョンを自動採番し、
+`vX.Y.Z` の git タグを打ってから `ghcr.io/ieyoukan/pplale-cms:X.Y.Z`(と `:latest`)を
+push する。追加のシークレット設定は不要（`GITHUB_TOKEN` の `contents:write` +
+`packages:write` のみで動く）。**初回だけ**、GitHub の Package 設定でこのパッケージの
+公開範囲を確認しておくこと（明示的に Public にしないと、Helm 側で `imagePullSecrets`
+なしの運用の場合 pull できないことがある）。
+
+実際に何をデプロイするかは [ArgoCD Image Updater](https://argocd-image-updater.readthedocs.io/)
+に任せる想定。Application 側に以下のようなアノテーションを付けると、新しい
+`X.Y.Z` タグが push されるたびに自動で `image.tag` を書き換えて再デプロイする
+（`helm/pplale-cms/values.yaml` の `image.tag` がその書き込み先）:
+
+```yaml
+annotations:
+  argocd-image-updater.argoproj.io/image-list: pplale-cms=ghcr.io/ieyoukan/pplale-cms
+  argocd-image-updater.argoproj.io/pplale-cms.update-strategy: semver
+  argocd-image-updater.argoproj.io/pplale-cms.allow-tags: regexp:^[0-9]+\.[0-9]+\.[0-9]+$
+  argocd-image-updater.argoproj.io/write-back-method: argocd
+  argocd-image-updater.argoproj.io/pplale-cms.helm.image-tag: image.tag
+```
+
+`helm/pplale-cms/values.yaml` の `image.tag` は空文字（Chart の `appVersion` に
+フォールバック）のままにしてある。ArgoCD 管理下ではこの値は Image Updater が
+上書きするので実質参照されず、ArgoCD を使わずに手動 `helm install` するときだけの
+フォールバックという位置づけ。
 
 ```bash
 helm dependency update helm/pplale-cms
