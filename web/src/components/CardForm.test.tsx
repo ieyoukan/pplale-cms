@@ -53,6 +53,28 @@ describe('CardForm', () => {
     expect(screen.queryByLabelText(/役職/)).toBeNull();
   });
 
+  it('never offers "all" as a fruit outside playable cards, in the options or the default', () => {
+    renderForm('yojo');
+    const select = screen.getByLabelText('フルーツ') as HTMLSelectElement;
+    const optionValues = Array.from(select.options).map((o) => o.value);
+    expect(optionValues).not.toContain('all');
+    expect(select.value).not.toBe('all');
+  });
+
+  it('offers "all" as a fruit for playable cards, since that is the only kind that uses it', () => {
+    renderForm('playable');
+    const select = screen.getByLabelText('フルーツ') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toContain('all');
+  });
+
+  it('only shows the description field for playable cards', () => {
+    renderForm('yojo');
+    expect(screen.queryByLabelText('説明')).toBeNull();
+
+    renderForm('playable');
+    expect(screen.getAllByLabelText('説明').length).toBeGreaterThan(0);
+  });
+
   it('queues a draft with the CSRF header instead of opening a PR directly', async () => {
     fetchMock.mockResolvedValue({
       ok: true,

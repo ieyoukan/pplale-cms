@@ -36,7 +36,9 @@ export function emptyValues(kind: Kind): CardFormValues {
     kind,
     id: '',
     name: '',
-    fruit: 'all',
+    // 「全種(all)」はプレイアブルカードだけで使う値。幼女・お菓子・トークン幼女は
+    // 必ず特定のフルーツに属する。
+    fruit: kind === 'playable' ? 'all' : 'strawberry',
     description: '',
     cost: 0,
     hp: 0,
@@ -85,6 +87,9 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
   const isEdit = values.id !== '';
   const preview = useMemo(() => (image ? URL.createObjectURL(image) : ''), [image]);
   const displayImage = preview || (isEdit ? currentImageUrl : '');
+  // 「全種(all)」は実データ上プレイアブルカードにしか存在しない。他のカードは
+  // 必ずどれかのフルーツに属するので、選択肢自体から外す。
+  const fruitOptions = kind === 'playable' ? metadata.fruits : metadata.fruits.filter((f) => f !== 'all');
 
   const set = <K extends keyof CardFormValues>(key: K, value: CardFormValues[K]) =>
     onChange({ ...values, [key]: value });
@@ -146,7 +151,7 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
       <label>
         フルーツ
         <select value={values.fruit} onChange={(e) => set('fruit', e.target.value)}>
-          {metadata.fruits.map((fruit) => (
+          {fruitOptions.map((fruit) => (
             <option key={fruit} value={fruit}>
               {fruitLabels[fruit] ?? fruit}
             </option>
@@ -218,10 +223,12 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
         <textarea rows={4} value={values.effect} onChange={(e) => set('effect', e.target.value)} />
       </label>
 
-      <label>
-        説明 (description)
-        <textarea rows={2} value={values.description} onChange={(e) => set('description', e.target.value)} />
-      </label>
+      {kind === 'playable' && (
+        <label>
+          説明
+          <textarea rows={2} value={values.description} onChange={(e) => set('description', e.target.value)} />
+        </label>
+      )}
 
       {error && <p className="error">{error}</p>}
 
