@@ -235,6 +235,13 @@ func TestCreateDraftConvertsImageAndServesIt(t *testing.T) {
 	if !draft.HasNewImage || draft.ImageDisplayURL != "/api/drafts/1/image" {
 		t.Errorf("draft image = %+v", draft)
 	}
+	saved, err := h.store.GetDraft(context.Background(), draft.ID)
+	if err != nil {
+		t.Fatalf("GetDraft: %v", err)
+	}
+	if len(saved.WebP) == 0 || len(saved.OGPPNG) == 0 || saved.SourceType != "png" {
+		t.Errorf("converted image was not persisted: webp=%d ogp=%d source=%q", len(saved.WebP), len(saved.OGPPNG), saved.SourceType)
+	}
 
 	// The list endpoint must show the same queued draft.
 	listReq := httptest.NewRequest(http.MethodGet, "/api/drafts", nil)
@@ -276,6 +283,12 @@ func TestCreateEditDraftWithoutNewImageShowsCurrentImage(t *testing.T) {
 	want := "https://raw.githubusercontent.com/ieyoukan/PPLALE-web/main/public/images/yojo/kagari.webp"
 	if draft.ImageDisplayURL != want {
 		t.Errorf("ImageDisplayURL = %q, want %q", draft.ImageDisplayURL, want)
+	}
+	if draft.Original == nil {
+		t.Fatal("Original = nil, want current upstream card for diff review")
+	}
+	if draft.Original.Name != "かがり" || draft.Original.ImageDisplayURL != want {
+		t.Errorf("Original = %+v", draft.Original)
 	}
 }
 
@@ -746,6 +759,9 @@ func TestSecurityHeadersAreAlwaysSet(t *testing.T) {
 	}
 	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
 		t.Errorf("CSP = %q", rec.Header().Get("Content-Security-Policy"))
+	}
+	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "img-src 'self' data: blob:") {
+		t.Errorf("CSP does not allow local image previews: %q", rec.Header().Get("Content-Security-Policy"))
 	}
 }
 

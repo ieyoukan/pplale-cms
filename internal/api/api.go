@@ -173,9 +173,13 @@ type Draft struct {
 	// ImageDisplayURL always resolves to something showable: the newly
 	// converted draft image when one was uploaded, otherwise the current
 	// upstream image for an edit-in-place draft.
-	ImageDisplayURL string    `json:"imageDisplayUrl"`
-	HasNewImage     bool      `json:"hasNewImage"`
-	CreatedAt       time.Time `json:"createdAt"`
+	ImageDisplayURL string `json:"imageDisplayUrl"`
+	HasNewImage     bool   `json:"hasNewImage"`
+	// Original is the current card on PPLALE-web when this draft edits an
+	// existing card. It lets the submitter review the exact before/after diff
+	// before opening a pull request. It is nil for new-card drafts.
+	Original  *Card     `json:"original,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // DraftsResponse lists the current user's queued drafts.

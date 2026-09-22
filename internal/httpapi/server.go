@@ -125,7 +125,7 @@ func securityHeaders(w http.ResponseWriter) {
 	h.Set("Referrer-Policy", "same-origin")
 	h.Set("Cross-Origin-Opener-Policy", "same-origin")
 	h.Set("Content-Security-Policy",
-		"default-src 'self'; img-src 'self' data: https://cdn.discordapp.com https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		"default-src 'self'; img-src 'self' data: blob: https://cdn.discordapp.com https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

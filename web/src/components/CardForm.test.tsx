@@ -75,6 +75,27 @@ describe('CardForm', () => {
     expect(screen.getAllByLabelText('説明').length).toBeGreaterThan(0);
   });
 
+  it('uses the same simple queue button label when editing', () => {
+    const card: Card = {
+      id: 'y_1', name: 'とここ', type: 'yojo', fruit: 'strawberry', description: '',
+      imageUrl: '/images/yojo/tokoko.webp', imageDisplayUrl: 'https://example/tokoko.webp',
+      cost: 1, hp: 2, attack: 3, effect: '挑発', role: '',
+    };
+    render(
+      <CardForm
+        metadata={metadata}
+        kind="yojo"
+        nextId="y_42"
+        values={fromCard('yojo', card)}
+        currentImageUrl={card.imageDisplayUrl}
+        onChange={vi.fn()}
+        onQueued={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: '下書きに追加' })).toBeTruthy();
+    expect(screen.queryByText(/下書きに追加\(更新\)/)).toBeNull();
+  });
+
   it('queues a draft with the CSRF header instead of opening a PR directly', async () => {
     fetchMock.mockResolvedValue({
       ok: true,

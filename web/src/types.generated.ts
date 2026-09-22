@@ -191,6 +191,12 @@ export interface Draft {
    */
   imageDisplayUrl: string;
   hasNewImage: boolean;
+  /**
+   * Original is the current card on PPLALE-web when this draft edits an
+   * existing card. It lets the submitter review the exact before/after diff
+   * before opening a pull request. It is nil for new-card drafts.
+   */
+  original?: Card;
   createdAt: string;
 }
 /**

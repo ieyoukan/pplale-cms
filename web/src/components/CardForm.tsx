@@ -233,7 +233,7 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
       {error && <p className="error">{error}</p>}
 
       <button type="submit" disabled={busy}>
-        {busy ? '追加中…' : isEdit ? '下書きに追加(更新)' : '下書きに追加'}
+        {busy ? '追加中…' : '下書きに追加'}
       </button>
       <p className="hint">
         下書きに追加されるだけで、まだ PPLALE-web には送られません。下書き一覧から「まとめて送信」を押すと、

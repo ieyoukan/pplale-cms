@@ -38,6 +38,33 @@ describe('DraftQueue', () => {
     expect(screen.queryByRole('button', { name: /まとめて送信する/ })).toBeNull();
   });
 
+  it('shows field-level and image before/after diffs for an edited card', () => {
+    const edited = draft({
+      cardId: 'y_1',
+      isEdit: true,
+      name: 'かがり改',
+      effect: '相手は2枚引く',
+      cost: 2,
+      imageDisplayUrl: '/api/drafts/1/image',
+      hasNewImage: true,
+      original: {
+        id: 'y_1', name: 'かがり', type: 'yojo', fruit: 'strawberry', description: '',
+        imageUrl: '/images/yojo/kagari.webp', imageDisplayUrl: 'https://example/kagari.webp',
+        cost: 1, hp: 1, attack: 1, effect: '相手は1枚引く', role: '',
+      },
+    });
+    const view = render(<DraftQueue drafts={[edited]} onChanged={vi.fn()} onSubmitted={vi.fn()} />);
+
+    expect(view.container.querySelector('.draft-name del')?.textContent).toBe('かがり');
+    expect(view.container.querySelector('.draft-name ins')?.textContent).toBe('かがり改');
+    expect(screen.getByText('コスト')).toBeTruthy();
+    expect(screen.getByText('効果')).toBeTruthy();
+    expect(view.container.querySelector('.draft-text-before del')?.textContent).toBe('1');
+    expect(view.container.querySelector('.draft-text-after ins')?.textContent).toBe('2');
+    expect(screen.getByAltText('かがりの現在の画像').getAttribute('src')).toBe('https://example/kagari.webp');
+    expect(screen.getByAltText('かがり改の変更後の画像').getAttribute('src')).toBe('/api/drafts/1/image');
+  });
+
   it('submits every queued draft in one request and reports the result', async () => {
     fetchMock.mockResolvedValue({
       ok: true,

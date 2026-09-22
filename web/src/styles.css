@@ -482,15 +482,18 @@ td {
 }
 
 .draft-queue li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
+  padding: 10px;
   border-bottom: 1px solid var(--border);
 }
 
 .draft-queue li:last-child {
   border-bottom: none;
+}
+
+.draft-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .draft-thumb {
@@ -522,9 +525,109 @@ td {
   white-space: nowrap;
 }
 
+.draft-name del,
+.draft-value-diff del,
+.draft-text-before del {
+  color: #b3261e;
+  background: rgba(179, 38, 30, 0.1);
+  text-decoration-thickness: 2px;
+}
+
+.draft-name ins,
+.draft-value-diff ins,
+.draft-text-after ins {
+  color: #1b7f3a;
+  background: rgba(27, 127, 58, 0.12);
+  text-decoration: none;
+}
+
+.diff-arrow {
+  color: var(--muted);
+  margin: 0 0.45rem;
+}
+
 .draft-action {
   font-size: 0.72rem;
   color: var(--accent);
+}
+
+.draft-changes {
+  margin: 10px 0 2px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.draft-change {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  font-size: 0.84rem;
+}
+
+.draft-change-label,
+.diff-side-label {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.draft-value-diff {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.draft-text-diff {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.draft-text-before,
+.draft-text-after {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  gap: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.draft-image-diff {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.draft-image-diff figure {
+  margin: 0;
+  text-align: center;
+}
+
+.draft-image-diff img {
+  display: block;
+  width: 90px;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: transparent;
+}
+
+.draft-image-diff figcaption {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 520px) {
+  .draft-change {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
 }
 
 .draft-remove {

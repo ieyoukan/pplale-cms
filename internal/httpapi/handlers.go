@@ -155,15 +155,19 @@ func (s *Server) handleCards(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]api.Card, len(list))
 	for i, c := range list {
-		out[i] = api.Card{
-			ID: c.ID, Name: c.Name, Type: string(c.Type), Fruit: string(c.Fruit),
-			Description: c.Description, ImageURL: c.ImageURL,
-			ImageDisplayURL: s.deps.CardReader.RawURL(cards.RepoImagePath(c.ImageURL)),
-			Cost:            c.Cost, HP: c.HP, Attack: c.Attack,
-			Effect: c.Effect, Role: stringPtr(c.Role), SweetType: stringPtr(c.SweetType), Version: stringPtr(c.Version),
-		}
+		out[i] = s.cardToAPI(c)
 	}
 	writeJSON(w, http.StatusOK, api.CardsResponse{Kind: string(ds.Kind), NextID: cards.NextID(ds, list), Cards: out})
+}
+
+func (s *Server) cardToAPI(c cards.Card) api.Card {
+	return api.Card{
+		ID: c.ID, Name: c.Name, Type: string(c.Type), Fruit: string(c.Fruit),
+		Description: c.Description, ImageURL: c.ImageURL,
+		ImageDisplayURL: s.deps.CardReader.RawURL(cards.RepoImagePath(c.ImageURL)),
+		Cost:            c.Cost, HP: c.HP, Attack: c.Attack,
+		Effect: c.Effect, Role: stringPtr(c.Role), SweetType: stringPtr(c.SweetType), Version: stringPtr(c.Version),
+	}
 }
 
 // buildDraftCard turns a submitted payload into the internal card shape,
@@ -360,7 +364,6 @@ func (s *Server) draftToAPI(ctx context.Context, d store.Draft) api.Draft {
 	}
 	if out.HasNewImage {
 		out.ImageDisplayURL = fmt.Sprintf("/api/drafts/%d/image", d.ID)
-		return out
 	}
 	if out.IsEdit {
 		if ds, err := cards.DatasetFor(cards.Kind(d.Kind)); err == nil {
@@ -368,7 +371,11 @@ func (s *Server) draftToAPI(ctx context.Context, d store.Draft) api.Draft {
 				if list, err := cards.Decode(ds, raw); err == nil {
 					for _, c := range list {
 						if c.ID == d.CardID {
-							out.ImageDisplayURL = s.deps.CardReader.RawURL(cards.RepoImagePath(c.ImageURL))
+							original := s.cardToAPI(c)
+							out.Original = &original
+							if !out.HasNewImage {
+								out.ImageDisplayURL = original.ImageDisplayURL
+							}
 							break
 						}
 					}
