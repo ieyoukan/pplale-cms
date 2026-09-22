@@ -9,6 +9,26 @@ import type { Card, CardFormValues, Draft, Kind, Me, Metadata, Submission, Submi
 
 type Tab = 'cards' | 'history' | 'users';
 
+function handleTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+
+  const tabs = Array.from(
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+  );
+  const current = tabs.indexOf(event.currentTarget);
+  if (current < 0) return;
+
+  event.preventDefault();
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? tabs.length - 1
+        : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[next]?.focus();
+  tabs[next]?.click();
+}
+
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,6 +113,9 @@ export function App() {
         <a className="login-button" href="/auth/login">
           Discord でログイン
         </a>
+        <a className="login-guide-link" href="/guide">
+          はじめての方へ：使い方を見る
+        </a>
       </main>
     );
   }
@@ -102,6 +125,9 @@ export function App() {
       <header>
         <h1>PPLALE CMS</h1>
         <div className="who">
+          <a className="guide-link" href="/guide">
+            使い方
+          </a>
           <span>
             {me.displayName} {me.role && <em>({me.role})</em>}
           </span>
@@ -119,15 +145,45 @@ export function App() {
         </p>
       )}
 
-      <nav className="tabs">
-        <button type="button" className={tab === 'cards' ? 'active' : ''} onClick={() => setTab('cards')}>
+      <nav className="tabs" role="tablist" aria-label="管理画面">
+        <button
+          id="tab-cards"
+          type="button"
+          role="tab"
+          aria-selected={tab === 'cards'}
+          aria-controls="panel-cards"
+          tabIndex={tab === 'cards' ? 0 : -1}
+          className={tab === 'cards' ? 'active' : ''}
+          onKeyDown={handleTabKeyDown}
+          onClick={() => setTab('cards')}
+        >
           カード
         </button>
-        <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>
+        <button
+          id="tab-history"
+          type="button"
+          role="tab"
+          aria-selected={tab === 'history'}
+          aria-controls="panel-history"
+          tabIndex={tab === 'history' ? 0 : -1}
+          className={tab === 'history' ? 'active' : ''}
+          onKeyDown={handleTabKeyDown}
+          onClick={() => setTab('history')}
+        >
           提出履歴
         </button>
         {me.canManageUsers && (
-          <button type="button" className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}>
+          <button
+            id="tab-users"
+            type="button"
+            role="tab"
+            aria-selected={tab === 'users'}
+            aria-controls="panel-users"
+            tabIndex={tab === 'users' ? 0 : -1}
+            className={tab === 'users' ? 'active' : ''}
+            onKeyDown={handleTabKeyDown}
+            onClick={() => setTab('users')}
+          >
             許可リスト
           </button>
         )}
@@ -150,13 +206,19 @@ export function App() {
       )}
 
       {tab === 'cards' && metadata && (
-        <div className="cards-tab">
-          <nav className="kinds">
+        <section id="panel-cards" className="cards-tab" role="tabpanel" aria-labelledby="tab-cards">
+          <nav className="kinds" role="tablist" aria-label="カード種別">
             {metadata.datasets.map((ds) => (
               <button
                 key={ds.kind}
+                id={`kind-tab-${ds.kind}`}
                 type="button"
+                role="tab"
+                aria-selected={ds.kind === kind}
+                aria-controls="kind-panel"
+                tabIndex={ds.kind === kind ? 0 : -1}
                 className={ds.kind === kind ? 'active' : ''}
+                onKeyDown={handleTabKeyDown}
                 onClick={() => {
                   const next = ds.kind as Kind;
                   setKind(next);
@@ -170,7 +232,7 @@ export function App() {
             ))}
           </nav>
 
-          <div className="columns">
+          <div id="kind-panel" className="columns" role="tabpanel" aria-labelledby={`kind-tab-${kind}`}>
             <CardList
               cards={cards}
               onEdit={(card) => {
@@ -225,13 +287,19 @@ export function App() {
               )}
             </div>
           </div>
-        </div>
+        </section>
       )}
 
-      {tab === 'history' && <Submissions submissions={submissions} />}
+      {tab === 'history' && (
+        <section id="panel-history" className="tab-panel" role="tabpanel" aria-labelledby="tab-history">
+          <Submissions submissions={submissions} />
+        </section>
+      )}
 
       {tab === 'users' && me.canManageUsers && (
-        <Users users={users} currentDiscordId={me.discordId} onChanged={loadUsers} />
+        <section id="panel-users" className="tab-panel" role="tabpanel" aria-labelledby="tab-users">
+          <Users users={users} currentDiscordId={me.discordId} onChanged={loadUsers} />
+        </section>
       )}
     </main>
   );
