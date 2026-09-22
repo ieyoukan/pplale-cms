@@ -18,6 +18,7 @@ export function App() {
   const [nextId, setNextId] = useState('');
   const [values, setValues] = useState<CardFormValues>(emptyValues('yojo'));
   const [editingCard, setEditingCard] = useState<Card | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -161,6 +162,7 @@ export function App() {
                   setKind(next);
                   setValues(emptyValues(next));
                   setEditingCard(null);
+                  setEditorOpen(false);
                 }}
               >
                 {ds.label}
@@ -174,35 +176,39 @@ export function App() {
               onEdit={(card) => {
                 setValues(fromCard(kind, card));
                 setEditingCard(card);
+                setEditorOpen(true);
               }}
+              onAdd={
+                me.canSubmit
+                  ? () => {
+                      setValues(emptyValues(kind));
+                      setEditingCard(null);
+                      setEditorOpen(true);
+                    }
+                  : undefined
+              }
             />
             <div className="editor-column">
-              {values.id && (
-                <button
-                  type="button"
-                  className="new-card"
-                  onClick={() => {
-                    setValues(emptyValues(kind));
-                    setEditingCard(null);
-                  }}
-                >
-                  新規カードに切り替える
-                </button>
-              )}
-              {me.canSubmit && (
-                <CardForm
-                  metadata={metadata}
-                  kind={kind}
-                  nextId={nextId}
-                  values={values}
-                  currentImageUrl={editingCard?.imageDisplayUrl}
-                  onChange={setValues}
-                  onQueued={() => {
-                    setValues(emptyValues(kind));
-                    setEditingCard(null);
-                    loadDrafts();
-                  }}
-                />
+              {editorOpen && me.canSubmit && (
+                <>
+                  <button type="button" className="close-editor" onClick={() => setEditorOpen(false)}>
+                    閉じる
+                  </button>
+                  <CardForm
+                    metadata={metadata}
+                    kind={kind}
+                    nextId={nextId}
+                    values={values}
+                    currentImageUrl={editingCard?.imageDisplayUrl}
+                    onChange={setValues}
+                    onQueued={() => {
+                      setValues(emptyValues(kind));
+                      setEditingCard(null);
+                      setEditorOpen(false);
+                      loadDrafts();
+                    }}
+                  />
+                </>
               )}
               {me.canSubmit && (
                 <section className="drafts-section">

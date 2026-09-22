@@ -4,9 +4,11 @@ import type { Card, ViewMode } from '../types';
 interface Props {
   cards: Card[];
   onEdit: (card: Card) => void;
+  /** 追加できる権限があるときだけ渡す。渡すと一覧に「カードを追加」タイルが出る。 */
+  onAdd?: () => void;
 }
 
-export function CardList({ cards, onEdit }: Props) {
+export function CardList({ cards, onEdit, onAdd }: Props) {
   const [query, setQuery] = useState('');
   const [view, setView] = useState<ViewMode>('grid');
 
@@ -40,17 +42,25 @@ export function CardList({ cards, onEdit }: Props) {
         {filtered.length} / {cards.length} 件 — PPLALE-web の main ブランチの内容です
       </p>
       {view === 'grid' ? (
-        <CardGrid cards={filtered} onEdit={onEdit} />
+        <CardGrid cards={filtered} onEdit={onEdit} onAdd={onAdd} />
       ) : (
-        <CardRows cards={filtered} onEdit={onEdit} />
+        <CardRows cards={filtered} onEdit={onEdit} onAdd={onAdd} />
       )}
     </div>
   );
 }
 
-function CardGrid({ cards, onEdit }: Props) {
+function CardGrid({ cards, onEdit, onAdd }: Props) {
   return (
     <ul className="card-grid">
+      {onAdd && (
+        <li>
+          <button type="button" className="add-tile" onClick={onAdd}>
+            <span className="add-tile-icon">＋</span>
+            <span>カードを追加</span>
+          </button>
+        </li>
+      )}
       {cards.map((card) => (
         <li key={card.id}>
           <button type="button" onClick={() => onEdit(card)}>
@@ -68,9 +78,17 @@ function CardGrid({ cards, onEdit }: Props) {
   );
 }
 
-function CardRows({ cards, onEdit }: Props) {
+function CardRows({ cards, onEdit, onAdd }: Props) {
   return (
     <ul className="card-rows">
+      {onAdd && (
+        <li>
+          <button type="button" className="add-row" onClick={onAdd}>
+            <span className="add-tile-icon">＋</span>
+            <span>カードを追加</span>
+          </button>
+        </li>
+      )}
       {cards.map((card) => (
         <li key={card.id}>
           <button type="button" onClick={() => onEdit(card)}>

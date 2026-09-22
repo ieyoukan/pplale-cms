@@ -154,6 +154,41 @@ h1 {
   color: transparent;
 }
 
+.add-tile {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px dashed var(--border) !important;
+  background: transparent !important;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.add-tile:hover {
+  border-color: var(--accent) !important;
+  color: var(--accent);
+}
+
+.add-tile-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.add-row {
+  grid-template-columns: 2.25rem 1fr !important;
+  color: var(--muted);
+}
+
+.add-row:hover {
+  color: var(--accent);
+}
+
+.add-row .add-tile-icon {
+  font-size: 1.1rem;
+}
+
 .grid-overlay {
   position: absolute;
   left: 0;
@@ -412,14 +447,18 @@ td {
   gap: 8px;
 }
 
-.new-card {
-  align-self: flex-start;
+.close-editor {
+  align-self: flex-end;
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 6px 14px;
-  color: inherit;
+  border: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding: 2px 4px;
   cursor: pointer;
+}
+
+.close-editor:hover {
+  color: var(--fg);
 }
 
 .drafts-section {

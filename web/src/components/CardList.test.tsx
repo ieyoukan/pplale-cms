@@ -57,4 +57,21 @@ describe('CardList', () => {
     await userEvent.click(screen.getByRole('button', { name: /とここ/ }));
     expect(onEdit).toHaveBeenCalledWith(cards[1]);
   });
+
+  it('omits the add-card tile when no onAdd handler is given', () => {
+    render(<CardList cards={[card({})]} onEdit={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /カードを追加/ })).toBeNull();
+  });
+
+  it('shows an add-card tile in the grid that calls onAdd, in both views', async () => {
+    const onAdd = vi.fn();
+    render(<CardList cards={[card({})]} onEdit={vi.fn()} onAdd={onAdd} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /カードを追加/ }));
+    expect(onAdd).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole('button', { name: 'リスト' }));
+    await userEvent.click(screen.getByRole('button', { name: /カードを追加/ }));
+    expect(onAdd).toHaveBeenCalledTimes(2);
+  });
 });

@@ -112,7 +112,7 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
 
   return (
     <form className="card-form" onSubmit={handleSubmit}>
-      <h2>{isEdit ? `カードを編集 (${values.id})` : `新規カード (${nextId} として登録されます)`}</h2>
+      {!isEdit && <p className="hint">{nextId} として登録されます。</p>}
 
       <label className="image-picker">
         <input
