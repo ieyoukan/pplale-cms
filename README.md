@@ -133,6 +133,14 @@ DEV_SKIP_AUTH=true
 
 ## デプロイ
 
+コンテナイメージは `main` への push / `v*.*.*` タグで GitHub Actions
+(`.github/workflows/docker-publish.yml`) が自動で `ghcr.io/ieyoukan/pplale-cms` に
+push する（`latest` と git sha タグ、セマンティックタグ）。追加のシークレット設定は不要
+（`GITHUB_TOKEN` の `packages: write` 権限のみで動く）。**初回だけ**、GitHub の
+Package 設定でこのパッケージの公開範囲を確認しておくこと（デフォルトは repo の可視性を
+継承するが、明示的に Public にしないと Helm 側の `imagePullSecrets` なし運用では pull
+できない場合がある）。
+
 ```bash
 helm dependency update helm/pplale-cms
 helm upgrade --install pplale-cms helm/pplale-cms \
