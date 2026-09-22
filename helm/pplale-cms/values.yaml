@@ -2,8 +2,13 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/ieyoukan/pplale-cms
-  tag: ""          # 未指定なら Chart の appVersion
-  pullPolicy: IfNotPresent
+  # docker-publish.yml は main への push のたびに latest と sha-<short> タグを
+  # 作る。v*.*.* のセマンティックタグは git タグを打ったときだけ作られるため、
+  # ここを Chart.AppVersion に頼ると（CIが打っていないタグなので）存在しない
+  # イメージを参照して ImagePullBackOff になる。運用が git タグを打つ体制に
+  # なるまでは latest をデフォルトにしておく。
+  tag: "latest"
+  pullPolicy: Always
 
 imagePullSecrets: []
 
