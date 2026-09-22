@@ -112,8 +112,9 @@ Webhook は PR がマージ/クローズされたときに CMS 側の提出履�
 - OAuth2 → Redirects に `<BASE_URL>/auth/callback` を登録
 - スコープは `identify` のみ（CMS はギルドもメールも読まない）
 
-Discord でログインできること自体は権限ではない。カードを提出するには許可リスト
+Discord でログインするには許可リスト
 (`/api/users`, 管理画面の「許可リスト」タブ) に登録されている必要がある。
+未登録のユーザーは Discord 認証後にセッションを発行せず、ログインを拒否する。
 最初の管理者は `BOOTSTRAP_ADMIN_DISCORD_ID` で起動時に登録される。
 
 ### ローカル開発で Discord ログインを省略する

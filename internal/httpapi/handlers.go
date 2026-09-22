@@ -25,6 +25,9 @@ const maxUploadBytes = imageconv.MaxSourceBytes + (1 << 20)
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if s.deps.DevSkipAuth {
+		if !s.allowLogin(w, r, s.deps.DevUser.ID) {
+			return
+		}
 		if _, err := s.deps.Sessions.Issue(r.Context(), w, s.deps.DevUser); err != nil {
 			writeError(w, http.StatusInternalServerError, "セッションを作成できませんでした")
 			return
@@ -68,6 +71,9 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Discord 認証に失敗しました")
 		return
 	}
+	if !s.allowLogin(w, r, user.ID) {
+		return
+	}
 
 	if _, err := s.deps.Sessions.Issue(r.Context(), w, user); err != nil {
 		writeError(w, http.StatusInternalServerError, "セッションを作成できませんでした")
@@ -75,6 +81,23 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	s.deps.Logger.Info("login", "discord_id", user.ID, "name", user.DisplayName())
 	http.Redirect(w, r, auth.SafeReturnPath(state.ReturnTo), http.StatusFound)
+}
+
+// allowLogin makes the allow list the login boundary, not merely the submit
+// boundary. The middleware still checks the entry on every request so that a
+// user removed after login loses access immediately.
+func (s *Server) allowLogin(w http.ResponseWriter, r *http.Request, discordID string) bool {
+	if _, err := s.deps.Store.GetUser(r.Context(), discordID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			s.deps.Logger.Warn("login denied: user is not on allow list", "discord_id", discordID)
+			writeError(w, http.StatusForbidden, "この Discord ユーザーはログインを許可されていません。管理者に許可リストへの追加を依頼してください")
+			return false
+		}
+		s.deps.Logger.Error("login allow list lookup failed", "discord_id", discordID, "err", err)
+		writeError(w, http.StatusInternalServerError, "ログイン権限を確認できませんでした")
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

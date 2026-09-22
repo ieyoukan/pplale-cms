@@ -89,7 +89,7 @@ export function App() {
     return (
       <main className="app login">
         <h1>PPLALE CMS</h1>
-        <p>カードの追加・編集には Discord ログインが必要です。</p>
+        <p>許可された Discord ユーザーのみログインできます。</p>
         <a className="login-button" href="/auth/login">
           Discord でログイン
         </a>

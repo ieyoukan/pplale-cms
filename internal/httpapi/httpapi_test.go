@@ -163,7 +163,7 @@ func TestUnauthenticatedRequestsAreRejected(t *testing.T) {
 	}
 }
 
-// Logging in with Discord proves identity only. Queuing a draft requires an
+// Even if a stale or forged session exists, queuing a draft still requires an
 // entry on the allow list.
 func TestLoggedInButNotOnAllowListCannotQueueADraft(t *testing.T) {
 	h := newHarness(t)
@@ -659,6 +659,29 @@ func TestDevSkipAuthLogsInWithoutDiscord(t *testing.T) {
 	decode(t, meRec, &me)
 	if me.DiscordID != "1" || !me.CanManageUsers {
 		t.Errorf("me = %+v", me)
+	}
+}
+
+func TestDevSkipAuthRejectsUserNotOnAllowList(t *testing.T) {
+	mem := store.NewMemory()
+	deps := Deps{
+		Store:       mem,
+		Sessions:    &auth.Sessions{Store: mem},
+		StateSigner: mustSigner(t),
+		Logger:      slog.New(slog.DiscardHandler),
+		DevSkipAuth: true,
+		DevUser:     auth.DiscordUser{ID: "1", Username: "dev"},
+	}
+
+	rec := httptest.NewRecorder()
+	New(deps).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/login", nil))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == auth.SessionCookie && cookie.Value != "" {
+			t.Fatal("a session cookie was issued to a user not on the allow list")
+		}
 	}
 }
 
