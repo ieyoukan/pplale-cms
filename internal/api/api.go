@@ -223,8 +223,7 @@ type SubmissionsResponse struct {
 
 // UpsertUserRequest adds or updates an allow list entry.
 type UpsertUserRequest struct {
-	DisplayName string `json:"displayName"`
-	Role        Role   `json:"role"`
+	Role Role `json:"role"`
 }
 
 // StatusResponse is the acknowledgement returned by mutations with no payload.

@@ -248,7 +248,6 @@ export interface SubmissionsResponse {
  * UpsertUserRequest adds or updates an allow list entry.
  */
 export interface UpsertUserRequest {
-  displayName: string;
   role: Role;
 }
 /**

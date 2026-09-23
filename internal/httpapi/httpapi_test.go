@@ -552,7 +552,7 @@ func TestAllowListAdministrationRequiresAdmin(t *testing.T) {
 	}
 
 	admin := h.login(t, "100000000000000009", "admin", store.RoleAdmin)
-	req = httptest.NewRequest(http.MethodPut, "/api/users/100000000000000008", strings.NewReader(`{"role":"creator","displayName":"new"}`))
+	req = httptest.NewRequest(http.MethodPut, "/api/users/100000000000000008", strings.NewReader(`{"role":"creator"}`))
 	admin(req)
 	if rec := h.do(req); rec.Code != http.StatusOK {
 		t.Fatalf("admin PUT /api/users = %d", rec.Code)
@@ -648,7 +648,7 @@ func TestLoginRedirectsToDiscordWithSignedState(t *testing.T) {
 
 func TestDevSkipAuthLogsInWithoutDiscord(t *testing.T) {
 	mem := store.NewMemory()
-	if err := mem.UpsertUser(context.Background(), store.User{DiscordID: "1", DisplayName: "dev", Role: store.RoleAdmin}); err != nil {
+	if err := mem.UpsertUser(context.Background(), store.User{DiscordID: "1", DisplayName: "old name", Role: store.RoleAdmin, AddedBy: "seed"}); err != nil {
 		t.Fatalf("UpsertUser: %v", err)
 	}
 	deps := Deps{
@@ -691,6 +691,13 @@ func TestDevSkipAuthLogsInWithoutDiscord(t *testing.T) {
 	decode(t, meRec, &me)
 	if me.DiscordID != "1" || !me.CanManageUsers {
 		t.Errorf("me = %+v", me)
+	}
+	allowed, err := mem.GetUser(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("GetUser: %v", err)
+	}
+	if allowed.DisplayName != "dev" || allowed.Role != store.RoleAdmin || allowed.AddedBy != "seed" {
+		t.Errorf("allow list entry after login = %+v", allowed)
 	}
 }
 

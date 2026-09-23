@@ -25,7 +25,7 @@ const maxUploadBytes = imageconv.MaxSourceBytes + (1 << 20)
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if s.deps.DevSkipAuth {
-		if !s.allowLogin(w, r, s.deps.DevUser.ID) {
+		if !s.allowLogin(w, r, s.deps.DevUser) {
 			return
 		}
 		if _, err := s.deps.Sessions.Issue(r.Context(), w, s.deps.DevUser); err != nil {
@@ -71,7 +71,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Discord 認証に失敗しました")
 		return
 	}
-	if !s.allowLogin(w, r, user.ID) {
+	if !s.allowLogin(w, r, user) {
 		return
 	}
 
@@ -86,16 +86,29 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 // allowLogin makes the allow list the login boundary, not merely the submit
 // boundary. The middleware still checks the entry on every request so that a
 // user removed after login loses access immediately.
-func (s *Server) allowLogin(w http.ResponseWriter, r *http.Request, discordID string) bool {
-	if _, err := s.deps.Store.GetUser(r.Context(), discordID); err != nil {
+func (s *Server) allowLogin(w http.ResponseWriter, r *http.Request, discordUser auth.DiscordUser) bool {
+	allowedUser, err := s.deps.Store.GetUser(r.Context(), discordUser.ID)
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			s.deps.Logger.Warn("login denied: user is not on allow list", "discord_id", discordID)
+			s.deps.Logger.Warn("login denied: user is not on allow list", "discord_id", discordUser.ID)
 			writeError(w, http.StatusForbidden, "この Discord ユーザーはログインを許可されていません。管理者に許可リストへの追加を依頼してください")
 			return false
 		}
-		s.deps.Logger.Error("login allow list lookup failed", "discord_id", discordID, "err", err)
+		s.deps.Logger.Error("login allow list lookup failed", "discord_id", discordUser.ID, "err", err)
 		writeError(w, http.StatusInternalServerError, "ログイン権限を確認できませんでした")
 		return false
+	}
+
+	// Discord is the source of truth for display names. The allow list only
+	// needs an ID and a role; refresh the cached name whenever the user logs in.
+	displayName := strings.TrimSpace(discordUser.DisplayName())
+	if displayName != "" && displayName != allowedUser.DisplayName {
+		allowedUser.DisplayName = displayName
+		if err := s.deps.Store.UpsertUser(r.Context(), allowedUser); err != nil {
+			s.deps.Logger.Error("discord display name sync failed", "discord_id", discordUser.ID, "err", err)
+			writeError(w, http.StatusInternalServerError, "Discord の表示名を更新できませんでした")
+			return false
+		}
 	}
 	return true
 }
@@ -702,10 +715,17 @@ func (s *Server) handleUpsertUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "role は creator か admin である必要があります")
 		return
 	}
+	displayName := ""
+	if existing, err := s.deps.Store.GetUser(r.Context(), discordID); err == nil {
+		displayName = existing.DisplayName
+	} else if !errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusInternalServerError, "許可リストを確認できませんでした")
+		return
+	}
 
 	if err := s.deps.Store.UpsertUser(r.Context(), store.User{
 		DiscordID:   discordID,
-		DisplayName: strings.TrimSpace(body.DisplayName),
+		DisplayName: displayName,
 		Role:        role,
 		AddedBy:     session.DiscordID,
 	}); err != nil {

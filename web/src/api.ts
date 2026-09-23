@@ -54,11 +54,11 @@ export const api = {
 
   logout: () => request<{ status: string }>('/auth/logout', { method: 'POST' }),
 
-  upsertUser: (discordId: string, displayName: string, role: string) =>
+  upsertUser: (discordId: string, role: string) =>
     request<{ status: string }>(`/api/users/${encodeURIComponent(discordId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ displayName, role }),
+      body: JSON.stringify({ role }),
     }),
 
   deleteUser: (discordId: string) =>
