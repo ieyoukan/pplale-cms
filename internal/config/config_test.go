@@ -142,7 +142,6 @@ func TestLoadDevSkipAuthRequiresInsecureCookiesAndADevUser(t *testing.T) {
 	}
 
 	env["BOOTSTRAP_ADMIN_DISCORD_ID"] = "123456789012345678"
-	env["BOOTSTRAP_ADMIN_NAME"] = "admin"
 	got, err := Load(lookup(env))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -151,7 +150,7 @@ func TestLoadDevSkipAuthRequiresInsecureCookiesAndADevUser(t *testing.T) {
 	if got.DiscordClientID != "" {
 		t.Errorf("DiscordClientID = %q, want empty", got.DiscordClientID)
 	}
-	if !got.DevSkipAuth || got.DevUserDiscordID != "123456789012345678" || got.DevUserName != "admin" {
+	if !got.DevSkipAuth || got.DevUserDiscordID != "123456789012345678" || got.DevUserName != "123456789012345678" {
 		t.Errorf("dev skip auth config = %+v", got)
 	}
 

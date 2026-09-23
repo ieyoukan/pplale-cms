@@ -50,8 +50,6 @@ spec:
             {{- with .Values.bootstrapAdmin.discordId }}
             - name: BOOTSTRAP_ADMIN_DISCORD_ID
               value: {{ . | quote }}
-            - name: BOOTSTRAP_ADMIN_NAME
-              value: {{ $.Values.bootstrapAdmin.name | quote }}
             {{- end }}
             {{- if .Values.postgresql.enabled }}
             - name: PGPASSWORD

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -52,16 +53,26 @@ func run(logger *slog.Logger) error {
 	}
 
 	if cfg.BootstrapAdminID != "" {
-		if _, err := db.GetUser(ctx, cfg.BootstrapAdminID); errors.Is(err, store.ErrNotFound) {
+		bootstrapAdmin, err := db.GetUser(ctx, cfg.BootstrapAdminID)
+		if errors.Is(err, store.ErrNotFound) {
 			if err := db.UpsertUser(ctx, store.User{
-				DiscordID:   cfg.BootstrapAdminID,
-				DisplayName: cfg.BootstrapAdminName,
-				Role:        store.RoleAdmin,
-				AddedBy:     "bootstrap",
+				DiscordID: cfg.BootstrapAdminID,
+				Role:      store.RoleAdmin,
+				AddedBy:   "bootstrap",
 			}); err != nil {
 				return err
 			}
 			logger.Info("bootstrap admin created", "discord_id", cfg.BootstrapAdminID)
+		} else if err != nil {
+			return err
+		} else if bootstrapAdmin.AddedBy == "bootstrap" && strings.TrimSpace(bootstrapAdmin.DisplayName) == "bootstrap admin" {
+			// Older versions stored this placeholder as if it were a real Discord
+			// name. Remove it once; the next login fills in the actual name.
+			bootstrapAdmin.DisplayName = ""
+			if err := db.UpsertUser(ctx, bootstrapAdmin); err != nil {
+				return err
+			}
+			logger.Info("legacy bootstrap display name removed", "discord_id", cfg.BootstrapAdminID)
 		}
 	}
 

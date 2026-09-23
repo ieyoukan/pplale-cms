@@ -36,7 +36,6 @@ type Config struct {
 
 	DatabaseURL          string
 	BootstrapAdminID     string
-	BootstrapAdminName   string
 	StaticDir            string
 	AllowInsecureCookies bool
 
@@ -66,7 +65,6 @@ func Load(getenv Getenv) (Config, error) {
 		GitHubAPIBase:       getenv("GITHUB_API_BASE"),
 		DatabaseURL:         getenv("DATABASE_URL"),
 		BootstrapAdminID:    getenv("BOOTSTRAP_ADMIN_DISCORD_ID"),
-		BootstrapAdminName:  orDefault(getenv("BOOTSTRAP_ADMIN_NAME"), "bootstrap admin"),
 		StaticDir:           orDefault(getenv("STATIC_DIR"), "web/dist"),
 	}
 
@@ -151,10 +149,12 @@ func Load(getenv Getenv) (Config, error) {
 			return Config{}, errors.New("config: DEV_SKIP_AUTH は ALLOW_INSECURE_COOKIES=true のローカル開発でのみ使用できます")
 		}
 		c.DevUserDiscordID = orDefault(getenv("DEV_USER_DISCORD_ID"), c.BootstrapAdminID)
-		c.DevUserName = orDefault(getenv("DEV_USER_NAME"), orDefault(c.BootstrapAdminName, "dev user"))
 		if c.DevUserDiscordID == "" {
 			return Config{}, errors.New("config: DEV_SKIP_AUTH を使うには DEV_USER_DISCORD_ID か BOOTSTRAP_ADMIN_DISCORD_ID が必要です")
 		}
+		// OAuthを省略するローカル開発ではDiscordから表示名を取得できない。
+		// 明示されなければ、架空の名前ではなく識別可能なDiscord IDを使う。
+		c.DevUserName = orDefault(getenv("DEV_USER_NAME"), c.DevUserDiscordID)
 	}
 
 	return c, nil

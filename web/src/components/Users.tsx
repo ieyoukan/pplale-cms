@@ -40,7 +40,7 @@ export function Users({ users, currentDiscordId, onChanged }: Props) {
     <div className="users">
       <form onSubmit={add}>
         <h3>許可リストに追加 / 更新</h3>
-        <p className="hint">表示名は本人がDiscordでログインすると自動で反映されます。</p>
+        <p className="hint">Discord表示名は本人の初回ログイン後に反映されます。</p>
         <label>
           Discord ユーザーID
           <input value={discordId} onChange={(e) => setDiscordId(e.target.value)} placeholder="123456789012345678" required />
@@ -69,7 +69,7 @@ export function Users({ users, currentDiscordId, onChanged }: Props) {
           {users.map((user) => (
             <tr key={user.discordId}>
               <td>{user.discordId}</td>
-              <td>{user.displayName || '未ログイン'}</td>
+              <td>{user.displayName || '—'}</td>
               <td>{user.role}</td>
               <td>
                 {user.discordId !== currentDiscordId && (

@@ -151,7 +151,7 @@ h1 {
 
 .columns {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.4fr);
   gap: 24px;
   align-items: start;
 }
@@ -207,9 +207,9 @@ h1 {
   padding: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px;
-  max-height: 70vh;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  max-height: 85vh;
   overflow-y: auto;
 }
 
@@ -302,7 +302,7 @@ h1 {
   list-style: none;
   padding: 0;
   margin: 0;
-  max-height: 70vh;
+  max-height: 85vh;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 10px;

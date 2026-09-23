@@ -44,7 +44,6 @@ upstream:
 # 最初の管理者。起動時に許可リストへ admin として登録される（既に存在すれば何もしない）。
 bootstrapAdmin:
   discordId: ""
-  name: "bootstrap admin"
 
 session:
   ttl: 12h
