@@ -118,29 +118,45 @@ type Dataset struct {
 // Metadata hands the form its option lists so the UI can never offer a value
 // the backend would reject.
 type Metadata struct {
-	Datasets   []Dataset `json:"datasets"`
-	Fruits     []string  `json:"fruits"`
-	Roles      []string  `json:"roles"`
-	SweetTypes []string  `json:"sweetTypes"`
-	Versions   []string  `json:"versions"`
+	Datasets   []Dataset      `json:"datasets"`
+	Fruits     []SelectOption `json:"fruits"`
+	Roles      []string       `json:"roles"`
+	SweetTypes []SelectOption `json:"sweetTypes"`
+	Versions   []string       `json:"versions"`
+}
+
+// SelectOption keeps the stored value separate from the friendly label shown
+// to card creators.
+type SelectOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// NewTaxonomyInput is all a creator supplies when adding a classification;
+// the stable source-data key is generated from the English name.
+type NewTaxonomyInput struct {
+	LabelJA string `json:"labelJa"`
+	LabelEN string `json:"labelEn"`
 }
 
 // SubmitPayload is the JSON part of the multipart submission. The image is
 // sent alongside it as the `image` file field; its eventual file name is
 // generated server side, so callers never need to think about paths.
 type SubmitPayload struct {
-	Kind        string  `json:"kind"`
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Fruit       string  `json:"fruit"`
-	Description string  `json:"description"`
-	Cost        int     `json:"cost"`
-	HP          int     `json:"hp"`
-	Attack      int     `json:"attack"`
-	Effect      *string `json:"effect,omitempty"`
-	Role        *string `json:"role,omitempty"`
-	SweetType   *string `json:"sweetType,omitempty"`
-	Version     *string `json:"version,omitempty"`
+	Kind         string            `json:"kind"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Fruit        string            `json:"fruit"`
+	Description  string            `json:"description"`
+	Cost         int               `json:"cost"`
+	HP           int               `json:"hp"`
+	Attack       int               `json:"attack"`
+	Effect       *string           `json:"effect,omitempty"`
+	Role         *string           `json:"role,omitempty"`
+	SweetType    *string           `json:"sweetType,omitempty"`
+	Version      *string           `json:"version,omitempty"`
+	NewFruit     *NewTaxonomyInput `json:"newFruit,omitempty"`
+	NewSweetType *NewTaxonomyInput `json:"newSweetType,omitempty"`
 }
 
 // SubmitResult reports the pull request a batch submission opened.
@@ -156,20 +172,22 @@ type SubmitResult struct {
 // image has already been converted to WebP/OGP-PNG so the queue previews
 // exactly what a pull request would contain.
 type Draft struct {
-	ID          int64   `json:"id"`
-	Kind        string  `json:"kind"`
-	CardID      string  `json:"cardId"`
-	IsEdit      bool    `json:"isEdit"`
-	Name        string  `json:"name"`
-	Fruit       string  `json:"fruit"`
-	Description string  `json:"description"`
-	Cost        int     `json:"cost"`
-	HP          int     `json:"hp"`
-	Attack      int     `json:"attack"`
-	Effect      *string `json:"effect,omitempty"`
-	Role        *string `json:"role,omitempty"`
-	SweetType   *string `json:"sweetType,omitempty"`
-	Version     *string `json:"version,omitempty"`
+	ID           int64         `json:"id"`
+	Kind         string        `json:"kind"`
+	CardID       string        `json:"cardId"`
+	IsEdit       bool          `json:"isEdit"`
+	Name         string        `json:"name"`
+	Fruit        string        `json:"fruit"`
+	Description  string        `json:"description"`
+	Cost         int           `json:"cost"`
+	HP           int           `json:"hp"`
+	Attack       int           `json:"attack"`
+	Effect       *string       `json:"effect,omitempty"`
+	Role         *string       `json:"role,omitempty"`
+	SweetType    *string       `json:"sweetType,omitempty"`
+	Version      *string       `json:"version,omitempty"`
+	NewFruit     *SelectOption `json:"newFruit,omitempty"`
+	NewSweetType *SelectOption `json:"newSweetType,omitempty"`
 	// ImageDisplayURL always resolves to something showable: the newly
 	// converted draft image when one was uploaded, otherwise the current
 	// upstream image for an edit-in-place draft.

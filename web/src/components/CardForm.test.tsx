@@ -6,9 +6,9 @@ import type { Card, Metadata } from '../types';
 
 const metadata: Metadata = {
   datasets: [],
-  fruits: ['all', 'strawberry'],
+  fruits: [{ value: 'all', label: '全種' }, { value: 'strawberry', label: 'いちご' }],
   roles: ['', 'manager'],
-  sweetTypes: ['', 'cake'],
+  sweetTypes: [{ value: '', label: '分類なし' }, { value: 'cake', label: 'ケーキ' }],
   versions: ['normal', 'beta'],
 };
 
@@ -51,6 +51,12 @@ describe('CardForm', () => {
     renderForm('sweet');
     expect(screen.getByLabelText(/お菓子タイプ/)).toBeTruthy();
     expect(screen.queryByLabelText(/役職/)).toBeNull();
+  });
+
+  it('offers adding new fruit and sweet classifications from the selectors', () => {
+    renderForm('sweet');
+    expect(screen.getByRole('option', { name: /新しいフルーツ分類/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /新しいお菓子タイプ/ })).toBeTruthy();
   });
 
   it('never offers "all" as a fruit outside playable cards, in the options or the default', () => {

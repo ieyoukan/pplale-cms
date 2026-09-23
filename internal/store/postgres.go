@@ -182,28 +182,36 @@ func (p *Postgres) UpdateSubmissionStatusByPR(ctx context.Context, prNumber int,
 }
 
 func (p *Postgres) CreateDraft(ctx context.Context, d Draft) (Draft, error) {
-	err := p.pool.QueryRow(ctx, `
+	taxonomy, err := json.Marshal(d.Taxonomy)
+	if err != nil {
+		return Draft{}, err
+	}
+	err = p.pool.QueryRow(ctx, `
 		INSERT INTO drafts (discord_id, display_name, kind, card_id, name, fruit, description,
-			cost, hp, attack, effect, role, sweet_type, version, image_slug,
+			cost, hp, attack, effect, role, sweet_type, version, taxonomy, image_slug,
 			webp, ogp_png, source_bytes, source_type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 		RETURNING id, created_at`,
 		d.DiscordID, d.DisplayName, d.Kind, d.CardID, d.Name, d.Fruit, d.Description,
-		d.Cost, d.HP, d.Attack, d.Effect, d.Role, d.SweetType, d.Version, d.ImageSlug,
+		d.Cost, d.HP, d.Attack, d.Effect, d.Role, d.SweetType, d.Version, taxonomy, d.ImageSlug,
 		d.WebP, d.OGPPNG, d.SourceBytes, d.SourceType).
 		Scan(&d.ID, &d.CreatedAt)
 	return d, err
 }
 
 const draftColumns = `id, discord_id, display_name, kind, card_id, name, fruit, description,
-	cost, hp, attack, effect, role, sweet_type, version, image_slug,
+	cost, hp, attack, effect, role, sweet_type, version, taxonomy, image_slug,
 	webp, ogp_png, source_bytes, source_type, created_at`
 
 func scanDraft(row pgx.Row) (Draft, error) {
 	var d Draft
+	var taxonomy []byte
 	err := row.Scan(&d.ID, &d.DiscordID, &d.DisplayName, &d.Kind, &d.CardID, &d.Name, &d.Fruit, &d.Description,
-		&d.Cost, &d.HP, &d.Attack, &d.Effect, &d.Role, &d.SweetType, &d.Version, &d.ImageSlug,
+		&d.Cost, &d.HP, &d.Attack, &d.Effect, &d.Role, &d.SweetType, &d.Version, &taxonomy, &d.ImageSlug,
 		&d.WebP, &d.OGPPNG, &d.SourceBytes, &d.SourceType, &d.CreatedAt)
+	if err == nil && len(taxonomy) > 0 {
+		err = json.Unmarshal(taxonomy, &d.Taxonomy)
+	}
 	return d, err
 }
 

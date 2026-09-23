@@ -37,6 +37,12 @@ func (e ValidationErrors) OrNil() error {
 // Validate checks a single card against the PPLALE-web schema and against the
 // extra constraints the dataset it belongs to imposes.
 func Validate(ds Dataset, c Card) error {
+	return ValidateWithTaxonomy(ds, c, DefaultTaxonomy())
+}
+
+// ValidateWithTaxonomy validates classifications against the live upstream
+// set, including a new value being introduced by the same submission.
+func ValidateWithTaxonomy(ds Dataset, c Card, taxonomy Taxonomy) error {
 	var errs ValidationErrors
 	add := func(field, msg string) {
 		errs = append(errs, ValidationError{Field: field, Message: msg})
@@ -53,7 +59,7 @@ func Validate(ds Dataset, c Card) error {
 	} else if c.Type != ds.CardType {
 		add("type", fmt.Sprintf("%s のカードは type=%q である必要があります", ds.Kind, ds.CardType))
 	}
-	if _, ok := fruitTypes[string(c.Fruit)]; !ok {
+	if !taxonomy.HasFruit(string(c.Fruit)) {
 		add("fruit", fmt.Sprintf("不正なフルーツタイプ: %q", c.Fruit))
 	}
 	if c.Cost < 0 {
@@ -76,7 +82,7 @@ func Validate(ds Dataset, c Card) error {
 		}
 	}
 	if c.SweetType != nil {
-		if _, ok := sweetTypes[string(*c.SweetType)]; !ok {
+		if !taxonomy.HasSweetType(string(*c.SweetType)) {
 			add("sweetType", fmt.Sprintf("不正なお菓子タイプ: %q", *c.SweetType))
 		}
 		if c.Type != TypeSweet {
@@ -115,10 +121,14 @@ func validateImageURL(ds Dataset, url string, add func(field, msg string)) {
 // ValidateDataset validates every card in a dataset and additionally rejects
 // duplicate IDs, which the upstream CI does not catch.
 func ValidateDataset(ds Dataset, list []Card) error {
+	return ValidateDatasetWithTaxonomy(ds, list, DefaultTaxonomy())
+}
+
+func ValidateDatasetWithTaxonomy(ds Dataset, list []Card, taxonomy Taxonomy) error {
 	var errs []error
 	seen := make(map[string]int, len(list))
 	for i, c := range list {
-		if err := Validate(ds, c); err != nil {
+		if err := ValidateWithTaxonomy(ds, c, taxonomy); err != nil {
 			errs = append(errs, fmt.Errorf("%s[%d] (%s): %w", ds.RootKey, i, c.ID, err))
 		}
 		if first, dup := seen[c.ID]; dup {

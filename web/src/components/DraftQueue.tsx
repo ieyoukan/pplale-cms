@@ -235,6 +235,8 @@ export function DraftQueue({ drafts, onChanged, onSubmitted }: Props) {
                     ) : d.name}
                   </span>
                   {!d.isEdit && <span className="draft-action">新規カード</span>}
+                  {d.newFruit && <span className="draft-taxonomy">新しいフルーツ：{d.newFruit.label}</span>}
+                  {d.newSweetType && <span className="draft-taxonomy">新しいお菓子タイプ：{d.newSweetType.label}</span>}
                 </div>
                 <button type="button" className="draft-remove" onClick={() => remove(d.id)} aria-label={`${d.name}を下書きから削除`}>
                   ×

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ieyoukan/pplale-cms/internal/api"
 	"github.com/ieyoukan/pplale-cms/internal/auth"
+	"github.com/ieyoukan/pplale-cms/internal/cards"
 )
 
 // ErrNotFound is returned when a lookup matches nothing.
@@ -73,6 +74,7 @@ type Draft struct {
 	Role        *string
 	SweetType   *string
 	Version     *string
+	Taxonomy    cards.TaxonomyChanges
 	ImageSlug   string
 	// WebP and OGPPNG are nil when the draft edits a card and keeps its
 	// existing image.

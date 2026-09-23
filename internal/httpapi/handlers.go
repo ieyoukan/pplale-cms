@@ -119,9 +119,10 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handleDatasets hands the form its option lists. Every value comes from the
-// cards package, so the UI cannot offer something validation would reject.
-func (s *Server) handleDatasets(w http.ResponseWriter, _ *http.Request) {
+// handleDatasets hands the form its option lists. Extensible classifications
+// come from the live PPLALE-web schema so newly merged values appear without a
+// CMS deployment.
+func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 	labels := map[cards.Kind]string{
 		cards.KindYojo: "幼女", cards.KindSweet: "お菓子",
 		cards.KindPlayable: "プレイアブル", cards.KindTokenYojo: "トークン幼女",
@@ -139,13 +140,26 @@ func (s *Server) handleDatasets(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 
+	taxonomy, err := cards.LoadTaxonomy(r.Context(), s.deps.CardReader)
+	if err != nil {
+		s.deps.Logger.Warn("live taxonomy unavailable; using built-in options", "err", err)
+		taxonomy = cards.DefaultTaxonomy()
+	}
 	writeJSON(w, http.StatusOK, api.Metadata{
 		Datasets:   datasets,
-		Fruits:     enumStrings(cards.AllFruits()),
+		Fruits:     taxonomyOptionsToAPI(taxonomy.Fruits),
 		Roles:      enumStrings(cards.AllRoles()),
-		SweetTypes: enumStrings(cards.AllSweetTypes()),
+		SweetTypes: taxonomyOptionsToAPI(taxonomy.SweetTypes),
 		Versions:   enumStrings(cards.AllVersions()),
 	})
+}
+
+func taxonomyOptionsToAPI(options []cards.TaxonomyOption) []api.SelectOption {
+	out := make([]api.SelectOption, len(options))
+	for i, option := range options {
+		out[i] = api.SelectOption{Value: option.Value, Label: option.LabelJA}
+	}
+	return out
 }
 
 func enumStrings[T ~string](values []T) []string {
@@ -234,6 +248,29 @@ func (s *Server) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	taxonomy, err := cards.LoadTaxonomy(r.Context(), s.deps.CardReader)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "現在の分類を確認できませんでした。少し待ってからもう一度お試しください")
+		return
+	}
+	changes, fields := buildTaxonomyChanges(&payload, taxonomy)
+	if len(fields) > 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{Error: "新しい分類の入力内容を確認してください", Fields: fields})
+		return
+	}
+	if changes.Fruit != nil {
+		if err := taxonomy.AddFruit(*changes.Fruit); err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{Error: "新しい分類の入力内容を確認してください", Fields: map[string]string{"newFruit": err.Error()}})
+			return
+		}
+	}
+	if changes.SweetType != nil {
+		if err := taxonomy.AddSweetType(*changes.SweetType); err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, api.ErrorResponse{Error: "新しい分類の入力内容を確認してください", Fields: map[string]string{"newSweetType": err.Error()}})
+			return
+		}
+	}
+
 	ds, err := cards.DatasetFor(cards.Kind(payload.Kind))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "不明なデータセットです")
@@ -289,7 +326,7 @@ func (s *Server) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 		card.ImageURL = ds.ImageURL("placeholder.webp")
 	}
 
-	if err := cards.Validate(ds, placeholderIDForValidation(ds, card)); err != nil {
+	if err := cards.ValidateWithTaxonomy(ds, placeholderIDForValidation(ds, card), taxonomy); err != nil {
 		var invalid cards.ValidationErrors
 		if errors.As(err, &invalid) {
 			fields := map[string]string{}
@@ -318,6 +355,7 @@ func (s *Server) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 		Role:        stringPtr(card.Role),
 		SweetType:   stringPtr(card.SweetType),
 		Version:     stringPtr(card.Version),
+		Taxonomy:    changes,
 		ImageSlug:   imageSlug,
 	}
 	if converted != nil {
@@ -335,6 +373,42 @@ func (s *Server) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 
 	s.deps.Logger.Info("draft created", "discord_id", session.DiscordID, "draft_id", saved.ID, "kind", ds.Kind)
 	writeJSON(w, http.StatusCreated, s.draftToAPI(r.Context(), saved))
+}
+
+func buildTaxonomyChanges(payload *api.SubmitPayload, live cards.Taxonomy) (cards.TaxonomyChanges, map[string]string) {
+	var changes cards.TaxonomyChanges
+	fields := map[string]string{}
+	if payload.NewFruit != nil {
+		option, err := cards.NewTaxonomyOption(payload.NewFruit.LabelJA, payload.NewFruit.LabelEN)
+		if err != nil {
+			fields["newFruit"] = err.Error()
+		} else {
+			payload.Fruit = option.Value
+			if live.HasFruit(option.Value) {
+				fields["newFruit"] = "同じ英語名のフルーツ分類がすでにあります。既存の選択肢を選んでください"
+			} else {
+				changes.Fruit = &option
+			}
+		}
+	}
+	if payload.NewSweetType != nil {
+		if payload.Kind != string(cards.KindSweet) {
+			fields["newSweetType"] = "新しいお菓子タイプはお菓子カードでのみ追加できます"
+		} else {
+			option, err := cards.NewTaxonomyOption(payload.NewSweetType.LabelJA, payload.NewSweetType.LabelEN)
+			if err != nil {
+				fields["newSweetType"] = err.Error()
+			} else {
+				payload.SweetType = &option.Value
+				if live.HasSweetType(option.Value) {
+					fields["newSweetType"] = "同じ英語名のお菓子タイプがすでにあります。既存の選択肢を選んでください"
+				} else {
+					changes.SweetType = &option
+				}
+			}
+		}
+	}
+	return changes, fields
 }
 
 // generateImageSlug picks the file name a new image is stored under. Callers
@@ -384,6 +458,12 @@ func (s *Server) draftToAPI(ctx context.Context, d store.Draft) api.Draft {
 		Cost: d.Cost, HP: d.HP, Attack: d.Attack,
 		Effect: d.Effect, Role: d.Role, SweetType: d.SweetType, Version: d.Version,
 		HasNewImage: len(d.WebP) > 0, CreatedAt: d.CreatedAt,
+	}
+	if d.Taxonomy.Fruit != nil {
+		out.NewFruit = &api.SelectOption{Value: d.Taxonomy.Fruit.Value, Label: d.Taxonomy.Fruit.LabelJA}
+	}
+	if d.Taxonomy.SweetType != nil {
+		out.NewSweetType = &api.SelectOption{Value: d.Taxonomy.SweetType.Value, Label: d.Taxonomy.SweetType.LabelJA}
 	}
 	if out.HasNewImage {
 		out.ImageDisplayURL = fmt.Sprintf("/api/drafts/%d/image", d.ID)
@@ -521,7 +601,7 @@ func (s *Server) handleSubmitDrafts(w http.ResponseWriter, r *http.Request) {
 			Cost: d.Cost, HP: d.HP, Attack: d.Attack, Effect: d.Effect,
 			Role: rolePtr(d.Role), SweetType: sweetPtr(d.SweetType), Version: versionPtr(d.Version),
 		}
-		item := publish.Item{Kind: cards.Kind(d.Kind), Card: card, ImageSlug: d.ImageSlug}
+		item := publish.Item{Kind: cards.Kind(d.Kind), Card: card, Taxonomy: d.Taxonomy, ImageSlug: d.ImageSlug}
 		if len(d.WebP) > 0 {
 			item.Image = &imageconv.Result{
 				WebP: d.WebP, OGPNG: d.OGPPNG, SourceBytes: d.SourceBytes, SourceType: d.SourceType,

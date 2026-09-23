@@ -376,6 +376,25 @@ textarea {
   color: var(--fg);
 }
 
+.new-taxonomy-fields {
+  margin: 14px 0;
+  padding: 4px 14px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: var(--accent-soft);
+}
+
+.new-taxonomy-fields legend {
+  padding: 0 7px;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.new-taxonomy-fields .hint {
+  margin: 7px 0 2px;
+}
+
 .stat-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -649,6 +668,17 @@ td {
 .draft-action {
   font-size: 0.72rem;
   color: var(--accent);
+}
+
+.draft-taxonomy {
+  width: fit-content;
+  margin-top: 2px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 2px 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .draft-changes {

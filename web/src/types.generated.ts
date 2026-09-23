@@ -130,10 +130,26 @@ export interface Dataset {
  */
 export interface Metadata {
   datasets: Dataset[];
-  fruits: string[];
+  fruits: SelectOption[];
   roles: string[];
-  sweetTypes: string[];
+  sweetTypes: SelectOption[];
   versions: string[];
+}
+/**
+ * SelectOption keeps the stored value separate from the friendly label shown
+ * to card creators.
+ */
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+/**
+ * NewTaxonomyInput is all a creator supplies when adding a classification;
+ * the stable source-data key is generated from the English name.
+ */
+export interface NewTaxonomyInput {
+  labelJa: string;
+  labelEn: string;
 }
 /**
  * SubmitPayload is the JSON part of the multipart submission. The image is
@@ -153,6 +169,8 @@ export interface SubmitPayload {
   role?: string;
   sweetType?: string;
   version?: string;
+  newFruit?: NewTaxonomyInput;
+  newSweetType?: NewTaxonomyInput;
 }
 /**
  * SubmitResult reports the pull request a batch submission opened.
@@ -184,6 +202,8 @@ export interface Draft {
   role?: string;
   sweetType?: string;
   version?: string;
+  newFruit?: SelectOption;
+  newSweetType?: SelectOption;
   /**
    * ImageDisplayURL always resolves to something showable: the newly
    * converted draft image when one was uploaded, otherwise the current

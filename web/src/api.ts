@@ -112,5 +112,11 @@ export function toPayload(values: CardFormValues): SubmitPayload {
   if (values.kind === 'playable') {
     payload.version = values.version || 'normal';
   }
+  if (values.fruit === '__new_fruit__') {
+    payload.newFruit = { labelJa: values.newFruitLabelJa, labelEn: values.newFruitLabelEn };
+  }
+  if (values.kind === 'sweet' && values.sweetType === '__new_sweet_type__') {
+    payload.newSweetType = { labelJa: values.newSweetTypeLabelJa, labelEn: values.newSweetTypeLabelEn };
+  }
   return payload;
 }

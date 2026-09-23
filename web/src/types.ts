@@ -43,4 +43,8 @@ export interface CardFormValues {
   role: string;
   sweetType: string;
   version: string;
+  newFruitLabelJa: string;
+  newFruitLabelEn: string;
+  newSweetTypeLabelJa: string;
+  newSweetTypeLabelEn: string;
 }

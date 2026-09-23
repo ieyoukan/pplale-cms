@@ -21,6 +21,7 @@ import (
 
 	"github.com/ieyoukan/pplale-cms/internal/api"
 	"github.com/ieyoukan/pplale-cms/internal/auth"
+	"github.com/ieyoukan/pplale-cms/internal/cards"
 	"github.com/ieyoukan/pplale-cms/internal/ghapp"
 	"github.com/ieyoukan/pplale-cms/internal/publish"
 	"github.com/ieyoukan/pplale-cms/internal/store"
@@ -50,6 +51,20 @@ type fakeRepo struct {
 }
 
 func (f *fakeRepo) FileContent(_ context.Context, path string) ([]byte, error) {
+	if path == cards.UpstreamSchemaPath {
+		return []byte(`export const fruitTypeSchema = z.enum(['all', 'strawberry', 'grape', 'melon', 'orange']);
+export const sweetTypeSchema = z.enum(['', 'animal_soda', 'cafe', 'float', 'doughnut', 'cake', 'back_menu', 'chai', 'ice_cream', 'pplale_soda', 'pplale_yaki', 'currency']);`), nil
+	}
+	if path == cards.UpstreamLocalePath {
+		return []byte(`const fruitLabels = {
+  ja: { all: 'すべて', strawberry: 'いちご', grape: 'ぶどう', melon: 'めろん', orange: 'おれんじ' },
+  en: { all: 'All', strawberry: 'Strawberry', grape: 'Grape', melon: 'Melon', orange: 'Orange' },
+};
+const sweetTypeLabels = {
+  ja: { '': '', animal_soda: '動物さんソーダ', cafe: 'カフェ', float: 'フロート', doughnut: 'ドーナツ', cake: 'ケーキ', back_menu: '裏メニュー', chai: 'チャイ', ice_cream: 'アイス', pplale_soda: 'ぷぷりえソーダ', pplale_yaki: 'ぷぷりえ焼き', currency: '通貨' },
+  en: { '': '', animal_soda: 'Animal soda', cafe: 'Cafe', float: 'Float', doughnut: 'Doughnut', cake: 'Cake', back_menu: 'Back menu', chai: 'Chai', ice_cream: 'Ice cream', pplale_soda: 'PPLALE soda', pplale_yaki: 'PPLALE-yaki', currency: 'Currency' },
+};`), nil
+	}
 	if path == "src/data/yojo.json" {
 		return []byte(yojoFixture), nil
 	}
@@ -186,6 +201,23 @@ func TestLoggedInButNotOnAllowListCannotQueueADraft(t *testing.T) {
 	}, testPNG())
 	if draftRec.Code != http.StatusForbidden {
 		t.Errorf("POST /api/drafts = %d, want 403", draftRec.Code)
+	}
+}
+
+func TestCreatorCanQueueCardWithNewFruitClassification(t *testing.T) {
+	h := newHarness(t)
+	authenticate := h.login(t, "100000000000000099", "creator", store.RoleCreator)
+	newFruit := map[string]any{"labelJa": "りんご", "labelEn": "Apple"}
+
+	draft, rec := h.createDraft(t, authenticate, map[string]any{
+		"kind": "yojo", "name": "りんごの子", "fruit": "__new_fruit__",
+		"cost": 1, "hp": 1, "attack": 1, "newFruit": newFruit,
+	}, testPNG())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if draft.Fruit != "apple" || draft.NewFruit == nil || draft.NewFruit.Label != "りんご" {
+		t.Errorf("draft = %+v, want generated apple classification", draft)
 	}
 }
 

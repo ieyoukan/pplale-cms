@@ -66,9 +66,7 @@ var (
 	allVersions  = []CardVersion{VersionNormal, VersionBeta}
 
 	cardTypes   = enumSet(allCardTypes)
-	fruitTypes  = enumSet(allFruits)
 	cardRoles   = enumSet(allRoles)
-	sweetTypes  = enumSet(allSweetType)
 	cardVersion = enumSet(allVersions)
 )
 

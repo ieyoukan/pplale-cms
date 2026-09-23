@@ -64,4 +64,18 @@ describe('toPayload', () => {
       attack: 1,
     });
   });
+
+  it('carries friendly names when a new classification is selected', () => {
+    const payload = toPayload({
+      ...emptyValues('sweet'),
+      fruit: '__new_fruit__',
+      sweetType: '__new_sweet_type__',
+      newFruitLabelJa: 'りんご',
+      newFruitLabelEn: 'Apple',
+      newSweetTypeLabelJa: 'タルト',
+      newSweetTypeLabelEn: 'Tart',
+    });
+    expect(payload.newFruit).toEqual({ labelJa: 'りんご', labelEn: 'Apple' });
+    expect(payload.newSweetType).toEqual({ labelJa: 'タルト', labelEn: 'Tart' });
+  });
 });

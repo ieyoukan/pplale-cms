@@ -2,34 +2,14 @@ import { useMemo, useState } from 'react';
 import { ApiError, api } from '../api';
 import type { Card, CardFormValues, Draft, Kind, Metadata } from '../types';
 
-const fruitLabels: Record<string, string> = {
-  all: '全種',
-  strawberry: 'いちご',
-  grape: 'ぶどう',
-  melon: 'メロン',
-  orange: 'オレンジ',
-};
-
 const roleLabels: Record<string, string> = {
   '': 'なし',
   assistant_manager: '副店長',
   manager: '店長',
 };
 
-const sweetLabels: Record<string, string> = {
-  '': '分類なし',
-  animal_soda: '動物さんソーダ',
-  cafe: 'カフェ',
-  float: 'フロート',
-  doughnut: 'ドーナツ',
-  cake: 'ケーキ',
-  back_menu: '裏メニュー',
-  chai: 'チャイ',
-  ice_cream: 'アイスクリーム',
-  pplale_soda: 'ぷぷりえソーダ',
-  pplale_yaki: 'ぷぷりえ焼き',
-  currency: '通貨',
-};
+const newFruitValue = '__new_fruit__';
+const newSweetTypeValue = '__new_sweet_type__';
 
 export function emptyValues(kind: Kind): CardFormValues {
   return {
@@ -47,6 +27,10 @@ export function emptyValues(kind: Kind): CardFormValues {
     role: '',
     sweetType: '',
     version: 'normal',
+    newFruitLabelJa: '',
+    newFruitLabelEn: '',
+    newSweetTypeLabelJa: '',
+    newSweetTypeLabelEn: '',
   };
 }
 
@@ -64,6 +48,10 @@ export function fromCard(kind: Kind, card: Card): CardFormValues {
     role: card.role ?? '',
     sweetType: card.sweetType ?? '',
     version: card.version ?? 'normal',
+    newFruitLabelJa: '',
+    newFruitLabelEn: '',
+    newSweetTypeLabelJa: '',
+    newSweetTypeLabelEn: '',
   };
 }
 
@@ -89,7 +77,7 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
   const displayImage = preview || (isEdit ? currentImageUrl : '');
   // 「全種(all)」は実データ上プレイアブルカードにしか存在しない。他のカードは
   // 必ずどれかのフルーツに属するので、選択肢自体から外す。
-  const fruitOptions = kind === 'playable' ? metadata.fruits : metadata.fruits.filter((f) => f !== 'all');
+  const fruitOptions = kind === 'playable' ? metadata.fruits : metadata.fruits.filter((f) => f.value !== 'all');
 
   const set = <K extends keyof CardFormValues>(key: K, value: CardFormValues[K]) =>
     onChange({ ...values, [key]: value });
@@ -152,13 +140,40 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
         フルーツ
         <select value={values.fruit} onChange={(e) => set('fruit', e.target.value)}>
           {fruitOptions.map((fruit) => (
-            <option key={fruit} value={fruit}>
-              {fruitLabels[fruit] ?? fruit}
+            <option key={fruit.value} value={fruit.value}>
+              {fruit.label}
             </option>
           ))}
+          <option value={newFruitValue}>＋ 新しいフルーツ分類を追加</option>
         </select>
         <FieldError message={fieldErrors.fruit} />
       </label>
+
+      {values.fruit === newFruitValue && (
+        <fieldset className="new-taxonomy-fields">
+          <legend>新しいフルーツ分類</legend>
+          <p className="hint">日本語名と英語名を入力すると、ゲーム側の選択肢も同時に追加されます。</p>
+          <label>
+            日本語名
+            <input
+              value={values.newFruitLabelJa}
+              onChange={(e) => set('newFruitLabelJa', e.target.value)}
+              placeholder="例：りんご"
+              required
+            />
+          </label>
+          <label>
+            英語名
+            <input
+              value={values.newFruitLabelEn}
+              onChange={(e) => set('newFruitLabelEn', e.target.value)}
+              placeholder="例：Apple"
+              required
+            />
+          </label>
+          <FieldError message={fieldErrors.newFruit} />
+        </fieldset>
+      )}
 
       <div className="stat-row">
         <label>
@@ -196,13 +211,40 @@ export function CardForm({ metadata, kind, nextId, values, currentImageUrl, onCh
           お菓子タイプ
           <select value={values.sweetType} onChange={(e) => set('sweetType', e.target.value)}>
             {metadata.sweetTypes.map((type) => (
-              <option key={type} value={type}>
-                {sweetLabels[type] ?? type}
+              <option key={type.value} value={type.value}>
+                {type.label}
               </option>
             ))}
+            <option value={newSweetTypeValue}>＋ 新しいお菓子タイプを追加</option>
           </select>
           <FieldError message={fieldErrors.sweetType} />
         </label>
+      )}
+
+      {kind === 'sweet' && values.sweetType === newSweetTypeValue && (
+        <fieldset className="new-taxonomy-fields">
+          <legend>新しいお菓子タイプ</legend>
+          <p className="hint">日本語名と英語名を入力すると、ゲーム側の選択肢も同時に追加されます。</p>
+          <label>
+            日本語名
+            <input
+              value={values.newSweetTypeLabelJa}
+              onChange={(e) => set('newSweetTypeLabelJa', e.target.value)}
+              placeholder="例：タルト"
+              required
+            />
+          </label>
+          <label>
+            英語名
+            <input
+              value={values.newSweetTypeLabelEn}
+              onChange={(e) => set('newSweetTypeLabelEn', e.target.value)}
+              placeholder="例：Tart"
+              required
+            />
+          </label>
+          <FieldError message={fieldErrors.newSweetType} />
+        </fieldset>
       )}
 
       {kind === 'playable' && (

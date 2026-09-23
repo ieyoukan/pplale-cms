@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS drafts (
     role         TEXT,
     sweet_type   TEXT,
     version      TEXT,
+    taxonomy     JSONB       NOT NULL DEFAULT '{}',
     image_slug   TEXT        NOT NULL DEFAULT '',
     webp         BYTEA,
     ogp_png      BYTEA,
@@ -62,3 +63,6 @@ CREATE TABLE IF NOT EXISTS drafts (
 );
 
 CREATE INDEX IF NOT EXISTS drafts_discord_id_idx ON drafts (discord_id);
+
+-- Existing installations predate classification changes on drafts.
+ALTER TABLE drafts ADD COLUMN IF NOT EXISTS taxonomy JSONB NOT NULL DEFAULT '{}';

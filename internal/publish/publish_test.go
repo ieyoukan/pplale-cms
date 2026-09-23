@@ -26,10 +26,28 @@ func (f *fakeRepo) FileContent(_ context.Context, path string) ([]byte, error) {
 		return nil, f.fetchErr
 	}
 	data, ok := f.files[path]
-	if !ok {
-		return nil, errors.New("not found: " + path)
+	if ok {
+		return data, nil
 	}
-	return data, nil
+	if path == cards.UpstreamSchemaPath {
+		return []byte(taxonomySchemaFixture), nil
+	}
+	if path == cards.UpstreamLocalePath {
+		return []byte(taxonomyLocaleFixture), nil
+	}
+	fixtures := map[string]string{
+		cards.UpstreamTypesPath: `export type FruitType = 'all' | 'strawberry' | 'grape' | 'melon' | 'orange';
+export type SweetType = '' | 'animal_soda' | 'cake';`,
+		cards.UpstreamFilterBarPath:      `const fruits = (['strawberry', 'grape', 'melon', 'orange'] as FruitType[]);`,
+		cards.UpstreamFruitSelectionPath: `const fruits = (['strawberry', 'grape', 'melon', 'orange'] as FruitType[]);`,
+		cards.UpstreamTwoPickPath: `const legacyFruitCodes: Record<string, FruitType> = {
+  strawberry: 'strawberry', grape: 'grape', melon: 'melon', orange: 'orange',
+};`,
+	}
+	if fixture, ok := fixtures[path]; ok {
+		return []byte(fixture), nil
+	}
+	return nil, errors.New("not found: " + path)
 }
 
 func (f *fakeRepo) CreatePullRequest(_ context.Context, in ghapp.PullRequestInput) (ghapp.PullRequest, error) {
@@ -69,10 +87,30 @@ const yojoFixture = `{
 }
 `
 
+const taxonomySchemaFixture = `
+export const fruitTypeSchema = z.enum(['all', 'strawberry', 'grape', 'melon', 'orange']);
+export const sweetTypeSchema = z.enum(['', 'animal_soda', 'cake']);
+`
+
+const taxonomyLocaleFixture = `
+const fruitLabels = {
+  ja: { all: 'すべて', strawberry: 'いちご', grape: 'ぶどう', melon: 'めろん', orange: 'おれんじ' },
+  en: { all: 'All', strawberry: 'Strawberry', grape: 'Grape', melon: 'Melon', orange: 'Orange' },
+};
+const sweetTypeLabels = {
+  ja: { '': '', animal_soda: '動物さんソーダ', cake: 'ケーキ' },
+  en: { '': '', animal_soda: 'Animal soda', cake: 'Cake' },
+};
+`
+
 var submitter = Submitter{DiscordID: "123456789012345678", DiscordName: "creator#1"}
 
 func newPublisher() (*Publisher, *fakeRepo) {
-	repo := &fakeRepo{files: map[string][]byte{"src/data/yojo.json": []byte(yojoFixture)}}
+	repo := &fakeRepo{files: map[string][]byte{
+		"src/data/yojo.json":     []byte(yojoFixture),
+		cards.UpstreamSchemaPath: []byte(taxonomySchemaFixture),
+		cards.UpstreamLocalePath: []byte(taxonomyLocaleFixture),
+	}}
 	return &Publisher{Repo: repo}, repo
 }
 
@@ -170,6 +208,44 @@ func TestPublishBatchSingleNewCard(t *testing.T) {
 	// 既存カードの行は書き換わってはいけない（PRの差分を最小に保つ）。
 	if !bytes.HasPrefix(updated, []byte(yojoFixture[:strings.Index(yojoFixture, `"id": "y_4"`)])) {
 		t.Error("existing cards were rewritten")
+	}
+}
+
+func TestPublishBatchAddsNewFruitClassificationWithCard(t *testing.T) {
+	p, repo := newPublisher()
+	item := newItem()
+	option, err := cards.NewTaxonomyOption("りんご", "Apple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.Card.Fruit = cards.FruitType(option.Value)
+	item.Taxonomy.Fruit = &option
+
+	got, err := p.PublishBatch(context.Background(), []Item{item}, submitter)
+	if err != nil {
+		t.Fatalf("PublishBatch: %v", err)
+	}
+
+	written := map[string]string{}
+	for _, file := range repo.created[0].Files {
+		written[file.Path] = string(file.Content)
+	}
+	for _, path := range cards.TaxonomySourcePaths(item.Taxonomy) {
+		if _, ok := written[path]; !ok {
+			t.Errorf("classification source %s was not included; files=%v", path, got.Files)
+		}
+	}
+	if !strings.Contains(written[cards.UpstreamSchemaPath], "'apple'") {
+		t.Error("fruit schema does not contain apple")
+	}
+	if !strings.Contains(written[cards.UpstreamLocalePath], "'りんご'") || !strings.Contains(written[cards.UpstreamLocalePath], "'Apple'") {
+		t.Error("fruit labels were not added in both languages")
+	}
+	if !strings.Contains(written[cards.UpstreamFruitSelectionPath], "'apple'") {
+		t.Error("2Pick fruit selection does not contain apple")
+	}
+	if !strings.Contains(written["src/data/yojo.json"], `"fruit": "apple"`) {
+		t.Error("card data does not use the new fruit")
 	}
 }
 

@@ -49,32 +49,76 @@ func read(t *testing.T, root string, parts ...string) string {
 	return string(data)
 }
 
-// TestEnumsMatchUpstreamSchema compares every z.enum in PPLALE-web's
-// src/lib/schema.ts with the value sets this repository validates against.
+// TestEnumsMatchUpstreamSchema ensures every built-in fallback remains valid
+// upstream. Fruit and sweet classifications may additionally be created by
+// the CMS and are loaded dynamically at runtime.
 func TestEnumsMatchUpstreamSchema(t *testing.T) {
 	root := upstreamRoot(t)
 	schema := read(t, root, "src", "lib", "schema.ts")
 
 	cases := []struct {
-		constName string
-		ours      []string
+		constName  string
+		ours       []string
+		extensible bool
 	}{
-		{"cardTypeSchema", enumStrings(cards.AllCardTypes())},
-		{"fruitTypeSchema", enumStrings(cards.AllFruits())},
-		{"cardRoleSchema", enumStrings(cards.AllRoles())},
-		{"sweetTypeSchema", enumStrings(cards.AllSweetTypes())},
-		{"cardVersionSchema", enumStrings(cards.AllVersions())},
+		{"cardTypeSchema", enumStrings(cards.AllCardTypes()), false},
+		{"fruitTypeSchema", enumStrings(cards.AllFruits()), true},
+		{"cardRoleSchema", enumStrings(cards.AllRoles()), false},
+		{"sweetTypeSchema", enumStrings(cards.AllSweetTypes()), true},
+		{"cardVersionSchema", enumStrings(cards.AllVersions()), false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.constName, func(t *testing.T) {
 			theirs := parseZodEnum(t, schema, tc.constName)
-			if !equalSets(theirs, tc.ours) {
-				t.Errorf("PPLALE-web の %s と値が一致しません\n  upstream: %v\n  ours:     %v\n"+
-					"internal/cards/card.go と .claude/skills/pplale-web-data-contract/SKILL.md を更新してください",
-					tc.constName, theirs, tc.ours)
+			if !tc.extensible && !equalSets(theirs, tc.ours) {
+				t.Fatalf("PPLALE-web の %s と値が一致しません\n  upstream: %v\n  ours:     %v", tc.constName, theirs, tc.ours)
+			}
+			upstream := make(map[string]bool, len(theirs))
+			for _, value := range theirs {
+				upstream[value] = true
+			}
+			for _, value := range tc.ours {
+				if !upstream[value] {
+					t.Errorf("PPLALE-web の %s に既定値 %q がありません\n  upstream: %v", tc.constName, value, theirs)
+				}
 			}
 		})
+	}
+}
+
+// TestTaxonomyPatchesApplyToLiveSources catches upstream source-layout changes
+// before the CMS starts creating incomplete classification pull requests.
+func TestTaxonomyPatchesApplyToLiveSources(t *testing.T) {
+	root := upstreamRoot(t)
+	fruit, err := cards.NewTaxonomyOption("りんご", "Apple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sweet, err := cards.NewTaxonomyOption("タルト", "Tart")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := cards.TaxonomyChanges{Fruit: &fruit, SweetType: &sweet}
+	sources := map[string][]byte{}
+	for _, path := range cards.TaxonomySourcePaths(changes) {
+		sources[path] = []byte(read(t, root, filepath.FromSlash(path)))
+	}
+	taxonomy, err := cards.ParseTaxonomy(sources[cards.UpstreamSchemaPath], sources[cards.UpstreamLocalePath])
+	if err != nil {
+		t.Fatalf("ParseTaxonomy: %v", err)
+	}
+	if !taxonomy.HasFruit("strawberry") || !taxonomy.HasSweetType("cake") {
+		t.Fatalf("live taxonomy was parsed incorrectly: %+v", taxonomy)
+	}
+	patched, err := cards.PatchTaxonomySources(sources, changes)
+	if err != nil {
+		t.Fatalf("PatchTaxonomySources: %v", err)
+	}
+	for _, path := range cards.TaxonomySourcePaths(changes) {
+		if string(patched[path]) == string(sources[path]) {
+			t.Errorf("%s was not changed", path)
+		}
 	}
 }
 

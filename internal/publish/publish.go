@@ -41,6 +41,10 @@ type Submitter struct {
 type Item struct {
 	Kind cards.Kind
 	Card cards.Card
+	// Taxonomy carries a new fruit and/or sweet classification first used by
+	// this card. The publisher updates PPLALE-web's types, schema and labels in
+	// the same commit.
+	Taxonomy cards.TaxonomyChanges
 	// ImageSlug is the base file name (without extension) for a new image.
 	// Ignored when Image is nil.
 	ImageSlug string
@@ -111,6 +115,36 @@ func (p *Publisher) PublishBatch(ctx context.Context, items []Item, submitter Su
 		return Result{}, errors.New("publish: 提出者の Discord ID が必要です")
 	}
 
+	taxonomy, err := cards.LoadTaxonomy(ctx, p.Repo)
+	if err != nil {
+		return Result{}, fmt.Errorf("publish: %w", err)
+	}
+	var taxonomyChanges []cards.TaxonomyChanges
+	for _, item := range items {
+		var pending cards.TaxonomyChanges
+		if option := item.Taxonomy.Fruit; option != nil {
+			if !taxonomy.HasFruit(option.Value) {
+				copy := *option
+				pending.Fruit = &copy
+			}
+			if err := taxonomy.AddFruit(*option); err != nil {
+				return Result{}, fmt.Errorf("publish: 新しいフルーツ分類: %w", err)
+			}
+		}
+		if option := item.Taxonomy.SweetType; option != nil {
+			if !taxonomy.HasSweetType(option.Value) {
+				copy := *option
+				pending.SweetType = &copy
+			}
+			if err := taxonomy.AddSweetType(*option); err != nil {
+				return Result{}, fmt.Errorf("publish: 新しいお菓子タイプ: %w", err)
+			}
+		}
+		if pending.Fruit != nil || pending.SweetType != nil {
+			taxonomyChanges = append(taxonomyChanges, pending)
+		}
+	}
+
 	groups := make(map[cards.Kind]*datasetGroup)
 	var order []cards.Kind
 	var datasetFiles []ghapp.File
@@ -175,7 +209,7 @@ func (p *Publisher) PublishBatch(ctx context.Context, items []Item, submitter Su
 			return Result{}, fmt.Errorf("publish: 「%s」: 新規カードには画像が必要です", card.Name)
 		}
 
-		if err := cards.Validate(g.ds, card); err != nil {
+		if err := cards.ValidateWithTaxonomy(g.ds, card, taxonomy); err != nil {
 			return Result{}, fmt.Errorf("「%s」: %w", card.Name, err)
 		}
 
@@ -190,7 +224,7 @@ func (p *Publisher) PublishBatch(ctx context.Context, items []Item, submitter Su
 
 	for _, kind := range order {
 		g := groups[kind]
-		if err := cards.ValidateDataset(g.ds, g.list); err != nil {
+		if err := cards.ValidateDatasetWithTaxonomy(g.ds, g.list, taxonomy); err != nil {
 			return Result{}, err
 		}
 		encoded, err := cards.Encode(g.ds, g.list)
@@ -200,7 +234,40 @@ func (p *Publisher) PublishBatch(ctx context.Context, items []Item, submitter Su
 		datasetFiles = append(datasetFiles, ghapp.File{Path: g.ds.JSONPath, Content: encoded})
 	}
 
-	files := append(datasetFiles, imageFiles...)
+	var taxonomyFiles []ghapp.File
+	if len(taxonomyChanges) > 0 {
+		summary := cards.TaxonomyChanges{}
+		for _, change := range taxonomyChanges {
+			if change.Fruit != nil {
+				summary.Fruit = change.Fruit
+			}
+			if change.SweetType != nil {
+				summary.SweetType = change.SweetType
+			}
+		}
+		paths := cards.TaxonomySourcePaths(summary)
+		sources := make(map[string][]byte, len(paths))
+		for _, path := range paths {
+			raw, err := p.Repo.FileContent(ctx, path)
+			if err != nil {
+				return Result{}, fmt.Errorf("publish: %s の取得に失敗しました: %w", path, err)
+			}
+			sources[path] = raw
+		}
+		for _, change := range taxonomyChanges {
+			var err error
+			sources, err = cards.PatchTaxonomySources(sources, change)
+			if err != nil {
+				return Result{}, fmt.Errorf("publish: 分類定義の更新に失敗しました: %w", err)
+			}
+		}
+		for _, path := range paths {
+			taxonomyFiles = append(taxonomyFiles, ghapp.File{Path: path, Content: sources[path]})
+		}
+	}
+
+	files := append(datasetFiles, taxonomyFiles...)
+	files = append(files, imageFiles...)
 	paths := make([]string, len(files))
 	for i, f := range files {
 		paths[i] = f.Path
@@ -216,7 +283,7 @@ func (p *Publisher) PublishBatch(ctx context.Context, items []Item, submitter Su
 	pr, err := p.Repo.CreatePullRequest(ctx, ghapp.PullRequestInput{
 		Branch:        branch,
 		Title:         title,
-		Body:          buildBody(results, paths, images, submitter),
+		Body:          buildBody(results, paths, images, taxonomyChanges, submitter),
 		CommitMessage: commit,
 		Files:         files,
 	})
@@ -284,7 +351,7 @@ func datasetLabel(kind cards.Kind) string {
 	}
 }
 
-func buildBody(results []CardResult, paths []string, images []imageNote, submitter Submitter) string {
+func buildBody(results []CardResult, paths []string, images []imageNote, taxonomy []cards.TaxonomyChanges, submitter Submitter) string {
 	var b strings.Builder
 	b.WriteString("pplale-cms から自動生成された PR です。\n\n")
 
@@ -293,6 +360,19 @@ func buildBody(results []CardResult, paths []string, images []imageNote, submitt
 		fmt.Fprintf(&b, "- `%s` %s（%s / %s）\n", r.CardID, r.CardName, datasetLabel(r.Kind), actionLabel(r.IsEdit))
 	}
 	b.WriteString("\n")
+
+	if len(taxonomy) > 0 {
+		b.WriteString("## 新しい分類\n\n")
+		for _, change := range taxonomy {
+			if option := change.Fruit; option != nil {
+				fmt.Fprintf(&b, "- フルーツ: %s / %s (`%s`)\n", option.LabelJA, option.LabelEN, option.Value)
+			}
+			if option := change.SweetType; option != nil {
+				fmt.Fprintf(&b, "- お菓子タイプ: %s / %s (`%s`)\n", option.LabelJA, option.LabelEN, option.Value)
+			}
+		}
+		b.WriteString("\n")
+	}
 
 	b.WriteString("## 変更ファイル\n\n")
 	for _, p := range paths {
